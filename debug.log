@@ -1,0 +1,185 @@
+2026-02-24 18:17:39,432 - DEBUG - pydot initializing
+2026-02-24 18:17:39,432 - DEBUG - pydot 3.0.3
+2026-02-24 18:17:39,498 - DEBUG - pydot dot_parser module initializing
+2026-02-24 18:17:39,501 - DEBUG - pydot core module initializing
+2026-02-24 18:17:46,638 - WARNING - YOLO load failed — HSV-only mode: PytorchStreamReader failed reading zip archive: failed finding central directory
+2026-02-25 14:14:01,756 - DEBUG - pydot initializing
+2026-02-25 14:14:01,756 - DEBUG - pydot 3.0.3
+2026-02-25 14:14:01,783 - DEBUG - pydot dot_parser module initializing
+2026-02-25 14:14:01,784 - DEBUG - pydot core module initializing
+2026-02-25 14:14:34,975 - DEBUG - pydot initializing
+2026-02-25 14:14:34,976 - DEBUG - pydot 3.0.3
+2026-02-25 14:14:35,002 - DEBUG - pydot dot_parser module initializing
+2026-02-25 14:14:35,003 - DEBUG - pydot core module initializing
+2026-02-25 14:15:03,876 - INFO - YOLO model loaded
+2026-02-25 14:16:07,543 - DEBUG - pydot initializing
+2026-02-25 14:16:07,543 - DEBUG - pydot 3.0.3
+2026-02-25 14:16:07,570 - DEBUG - pydot dot_parser module initializing
+2026-02-25 14:16:07,571 - DEBUG - pydot core module initializing
+2026-02-25 14:16:08,688 - INFO - YOLO model loaded
+2026-02-25 14:59:36,962 - DEBUG - pydot initializing
+2026-02-25 14:59:36,963 - DEBUG - pydot 3.0.3
+2026-02-25 14:59:36,990 - DEBUG - pydot dot_parser module initializing
+2026-02-25 14:59:36,991 - DEBUG - pydot core module initializing
+2026-02-25 14:59:38,423 - INFO - YOLO model loaded
+2026-02-25 14:59:40,386 - INFO - Blue camera started: 0
+2026-02-25 14:59:40,625 - INFO - Red camera started: 1
+2026-02-25 15:01:32,781 - DEBUG - pydot initializing
+2026-02-25 15:01:32,781 - DEBUG - pydot 3.0.3
+2026-02-25 15:01:32,809 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:01:32,810 - DEBUG - pydot core module initializing
+2026-02-25 15:01:34,167 - INFO - YOLO model loaded
+2026-02-25 15:01:36,079 - INFO - Blue camera started: 0
+2026-02-25 15:01:36,321 - INFO - Red camera started: 1
+2026-02-25 15:01:51,006 - DEBUG - pydot initializing
+2026-02-25 15:01:51,007 - DEBUG - pydot 3.0.3
+2026-02-25 15:01:51,032 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:01:51,032 - DEBUG - pydot core module initializing
+2026-02-25 15:01:52,215 - INFO - YOLO model loaded
+2026-02-25 15:06:21,177 - DEBUG - pydot initializing
+2026-02-25 15:06:21,177 - DEBUG - pydot 3.0.3
+2026-02-25 15:06:21,203 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:06:21,204 - DEBUG - pydot core module initializing
+2026-02-25 15:06:27,368 - DEBUG - pydot initializing
+2026-02-25 15:06:27,368 - DEBUG - pydot 3.0.3
+2026-02-25 15:06:27,391 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:06:27,391 - DEBUG - pydot core module initializing
+2026-02-25 15:06:28,465 - INFO - YOLO model loaded
+2026-02-25 15:06:30,376 - INFO - Blue camera started: 0
+2026-02-25 15:06:30,646 - INFO - Red camera started: 1
+2026-02-25 15:07:14,662 - INFO - Match audio started
+2026-02-25 15:08:23,967 - DEBUG - pydot initializing
+2026-02-25 15:08:23,967 - DEBUG - pydot 3.0.3
+2026-02-25 15:08:23,994 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:08:23,995 - DEBUG - pydot core module initializing
+2026-02-25 15:08:25,333 - INFO - YOLO model loaded
+2026-02-25 15:08:27,220 - INFO - Blue camera started: 0
+2026-02-25 15:08:27,477 - INFO - Red camera started: 1
+2026-02-25 15:21:59,747 - DEBUG - pydot initializing
+2026-02-25 15:21:59,747 - DEBUG - pydot 3.0.3
+2026-02-25 15:21:59,774 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:21:59,774 - DEBUG - pydot core module initializing
+2026-02-25 15:22:01,095 - INFO - YOLO model loaded
+2026-02-25 15:22:03,011 - INFO - Blue camera started: 0
+2026-02-25 15:22:03,260 - INFO - Red camera started: 1
+2026-02-25 15:24:23,343 - DEBUG - pydot initializing
+2026-02-25 15:24:23,343 - DEBUG - pydot 3.0.3
+2026-02-25 15:24:23,369 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:24:23,370 - DEBUG - pydot core module initializing
+2026-02-25 15:24:24,714 - INFO - YOLO model loaded
+2026-02-25 15:24:26,669 - INFO - Blue camera started: 0
+2026-02-25 15:24:26,905 - INFO - Red camera started: 1
+2026-02-25 15:27:28,513 - INFO - Match audio started
+2026-02-25 15:27:29,730 - INFO - Match audio started
+2026-02-25 15:27:30,145 - INFO - Match audio started
+2026-02-25 15:27:58,057 - INFO - Blue camera started: 0
+2026-02-25 15:27:58,301 - INFO - Red camera started: 1
+2026-02-25 15:33:40,325 - DEBUG - pydot initializing
+2026-02-25 15:33:40,325 - DEBUG - pydot 3.0.3
+2026-02-25 15:33:40,353 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:33:40,353 - DEBUG - pydot core module initializing
+2026-02-25 15:33:41,985 - INFO - YOLO model loaded
+2026-02-25 15:33:46,169 - INFO - Blue camera started: 0
+2026-02-25 15:33:46,442 - INFO - Red camera started: 1
+2026-02-25 15:36:12,137 - DEBUG - pydot initializing
+2026-02-25 15:36:12,137 - DEBUG - pydot 3.0.3
+2026-02-25 15:36:12,166 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:36:12,167 - DEBUG - pydot core module initializing
+2026-02-25 15:36:13,712 - INFO - YOLO model loaded
+2026-02-25 15:36:15,703 - INFO - Blue camera started: 0
+2026-02-25 15:36:15,991 - INFO - Red camera started: 1
+2026-02-25 15:45:39,076 - DEBUG - pydot initializing
+2026-02-25 15:45:39,077 - DEBUG - pydot 3.0.3
+2026-02-25 15:45:39,103 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:45:39,104 - DEBUG - pydot core module initializing
+2026-02-25 15:45:40,540 - INFO - YOLO model loaded
+2026-02-25 15:45:42,504 - INFO - Blue camera started: 0
+2026-02-25 15:45:42,780 - INFO - Red camera started: 1
+2026-02-25 15:51:24,839 - DEBUG - pydot initializing
+2026-02-25 15:51:24,839 - DEBUG - pydot 3.0.3
+2026-02-25 15:51:24,869 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:51:24,870 - DEBUG - pydot core module initializing
+2026-02-25 15:51:28,468 - INFO - Blue camera started: 0
+2026-02-25 15:51:28,749 - INFO - Red camera started: 1
+2026-02-25 15:52:13,851 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 15:54:04,753 - DEBUG - pydot initializing
+2026-02-25 15:54:04,753 - DEBUG - pydot 3.0.3
+2026-02-25 15:54:04,779 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:54:04,780 - DEBUG - pydot core module initializing
+2026-02-25 15:54:08,204 - INFO - Blue camera started: 0
+2026-02-25 15:54:08,293 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 15:54:08,475 - INFO - Red camera started: 1
+2026-02-25 15:56:10,362 - DEBUG - pydot initializing
+2026-02-25 15:56:10,362 - DEBUG - pydot 3.0.3
+2026-02-25 15:56:10,389 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:56:10,390 - DEBUG - pydot core module initializing
+2026-02-25 15:56:14,177 - INFO - Blue camera started: 0
+2026-02-25 15:56:14,306 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 15:56:14,465 - INFO - Red camera started: 1
+2026-02-25 15:56:40,290 - DEBUG - pydot initializing
+2026-02-25 15:56:40,290 - DEBUG - pydot 3.0.3
+2026-02-25 15:56:40,318 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:56:40,319 - DEBUG - pydot core module initializing
+2026-02-25 15:56:43,802 - INFO - Blue camera started: 0
+2026-02-25 15:56:43,912 - INFO - Red camera started: 1
+2026-02-25 15:56:45,744 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 15:59:22,236 - DEBUG - pydot initializing
+2026-02-25 15:59:22,236 - DEBUG - pydot 3.0.3
+2026-02-25 15:59:22,263 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:59:22,264 - DEBUG - pydot core module initializing
+2026-02-25 15:59:26,300 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 15:59:27,038 - INFO - Blue camera started: 0
+2026-02-25 15:59:27,313 - INFO - Red camera started: 1
+2026-02-25 15:59:37,368 - DEBUG - pydot initializing
+2026-02-25 15:59:37,369 - DEBUG - pydot 3.0.3
+2026-02-25 15:59:37,399 - DEBUG - pydot dot_parser module initializing
+2026-02-25 15:59:37,400 - DEBUG - pydot core module initializing
+2026-02-25 15:59:40,969 - INFO - Blue camera started: 0
+2026-02-25 15:59:41,048 - INFO - Red camera started: 1
+2026-02-25 15:59:42,624 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 16:00:04,496 - INFO - Blue camera started: 0
+2026-02-25 16:00:04,781 - INFO - Red camera started: 1
+2026-02-25 16:01:04,974 - DEBUG - pydot initializing
+2026-02-25 16:01:04,974 - DEBUG - pydot 3.0.3
+2026-02-25 16:01:05,007 - DEBUG - pydot dot_parser module initializing
+2026-02-25 16:01:05,007 - DEBUG - pydot core module initializing
+2026-02-25 16:01:08,769 - INFO - Blue camera started: 0
+2026-02-25 16:01:08,849 - INFO - Red camera started: 1
+2026-02-25 16:01:10,935 - INFO - Loaded YOLO-World (Open Vocab)
+2026-02-25 16:04:07,673 - INFO - Blue camera started: 0
+2026-02-25 16:04:07,967 - INFO - Red camera started: 1
+2026-02-25 16:04:13,093 - WARNING - YOLO-World load failed — HSV-only mode: No module named 'clip'
+2026-02-25 16:08:46,293 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:08:46,294 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:08:46,294 - INFO - Pulling moondream model...
+2026-02-25 16:08:46,294 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:08:46,294 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:08:46,294 - WARNING - Ollama load failed — HSV-only mode: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-02-25 16:08:47,348 - INFO - Blue camera started: 0
+2026-02-25 16:08:47,495 - INFO - Red camera started: 1
+2026-02-25 16:09:33,460 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:09:33,461 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:09:33,461 - INFO - Pulling moondream model...
+2026-02-25 16:09:33,461 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:09:33,462 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:09:33,462 - WARNING - Ollama load failed — HSV-only mode: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-02-25 16:09:35,311 - INFO - Blue camera started: 0
+2026-02-25 16:09:35,572 - INFO - Red camera started: 1
+2026-02-25 16:09:39,123 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:09:39,124 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:09:39,124 - INFO - Pulling moondream model...
+2026-02-25 16:09:39,124 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:09:39,124 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:09:39,124 - WARNING - Ollama load failed — HSV-only mode: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-02-25 16:09:41,010 - INFO - Blue camera started: 0
+2026-02-25 16:09:41,271 - INFO - Red camera started: 1
+2026-02-25 16:10:50,839 - INFO - Blue camera started: 0
+2026-02-25 16:26:12,206 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:26:12,207 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:26:12,207 - INFO - Pulling moondream model...
+2026-02-25 16:26:12,208 - DEBUG - connect_tcp.started host='127.0.0.1' port=11434 local_address=None timeout=None socket_options=None
+2026-02-25 16:26:12,208 - DEBUG - connect_tcp.failed exception=ConnectError(ConnectionRefusedError(61, 'Connection refused'))
+2026-02-25 16:26:12,208 - WARNING - Ollama load failed — HSV-only mode: Failed to connect to Ollama. Please check that Ollama is downloaded, running and accessible. https://ollama.com/download
+2026-02-25 16:26:15,274 - INFO - Blue camera started: 0
+2026-02-25 16:26:15,374 - INFO - Red camera started: 1
+2026-02-25 16:26:43,755 - INFO - Red camera started: 2

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTC DECODE — Login</title>
+    <style>
+        /* ── RESET & BASE ── */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            
+            /* Deep Liquid Background */
+            background: #000;
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(68, 0, 255, 0.45) 0%, transparent 40%),
+                radial-gradient(circle at 80% 80%, rgba(200, 0, 80, 0.4) 0%, transparent 40%),
+                radial-gradient(circle at 50% 50%, #0a0a12 0%, #000000 100%);
+            color: #fff;
+        }
+
+        /* ── AMBIENT GLOW ── */
+        .ambient-glow {
+            position: absolute;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(120, 80, 255, 0.15), transparent 70%);
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            pointer-events: none;
+            mix-blend-mode: screen;
+        }
+
+        /* ── LIQUID GLASS CARD ── */
+        .glass-card {
+            position: relative;
+            z-index: 10;
+            width: 360px;
+            padding: 40px 32px;
+            border-radius: 24px;
+            
+            /* The "Liquid" Effect */
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
+            
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 
+                0 20px 50px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px rgba(255, 255, 255, 0.2);
+            
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 
+                0 30px 60px rgba(0, 0, 0, 0.6),
+                inset 0 1px 1px rgba(255, 255, 255, 0.3);
+        }
+
+        /* ── TYPOGRAPHY ── */
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #fff 0%, #aaa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.45);
+            margin-bottom: 32px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* ── FORM ELEMENTS ── */
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: rgba(255, 255, 255, 0.5);
+            text-transform: uppercase;
+            padding-left: 4px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            height: 48px;
+            padding: 0 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.2);
+            color: #fff;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            background: rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* ── BUTTON ── */
+        button {
+            width: 100%;
+            height: 48px;
+            margin-top: 10px;
+            border-radius: 14px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            
+            /* Gradient Button */
+            background: linear-gradient(135deg, #4455ff 0%, #aa22ff 100%);
+            box-shadow: 0 10px 20px rgba(68, 34, 255, 0.3);
+            
+            transition: transform 0.1s, box-shadow 0.2s;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:hover {
+            box-shadow: 0 15px 30px rgba(68, 34, 255, 0.4);
+        }
+
+        /* ── ERROR MSG ── */
+        .error {
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 12px;
+            background: rgba(255, 50, 50, 0.15);
+            border: 1px solid rgba(255, 50, 50, 0.3);
+            color: #ff8888;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient-glow"></div>
+
+    <div class="glass-card">
+        <h1>FTC DECODE</h1>
+        <p class="subtitle">Scoring & Vision System</p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST">
+            <div class="input-group">
+                <label>Username</label>
+                <input type="text" name="username" placeholder="Enter ID" required autocomplete="off">
+            </div>
+            
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="••••••••" required>
+            </div>
+
+            <button type="submit">Unlock System</button>
+        </form>
+    </div>
+
+</body>
+</html>
