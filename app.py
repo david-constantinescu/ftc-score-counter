@@ -579,6 +579,8 @@ class GoalScorerApp:
                    command=self._reset_timer).pack(side=tk.LEFT, padx=3)
 
         ttk.Label(top, text=" | ", foreground="gray").pack(side=tk.LEFT, padx=2)
+        ttk.Button(top, text="Analyze Now", width=11,
+                   command=self._manual_analyze).pack(side=tk.LEFT, padx=3)
         ttk.Button(top, text="Reset All", width=9,
                    command=self._reset_all).pack(side=tk.LEFT, padx=3)
 
@@ -838,12 +840,21 @@ class GoalScorerApp:
             return
 
         if self.timer_running:
+            # PAUSE — stop recording and trigger analysis immediately
             self.timer_running = False
             self.audio.pause()
+            if self._timer_started:
+                self.blue_cam.stop_recording()
+                self.red_cam.stop_recording()
+                self._set_status("Recording stopped. ANALYZING...", True)
+                threading.Thread(target=self._analyze_all, daemon=True).start()
         else:
             self.timer_running = True
             self._timer_started = True
             self.audio.resume()
+            # Resume recording
+            self.blue_cam.start_recording("blue_record.avi")
+            self.red_cam.start_recording("red_record.avi")
             self._tick()
 
     def _begin_countdown(self):
@@ -884,10 +895,39 @@ class GoalScorerApp:
         self.analyzing = False
         self.root.after(0, lambda: self._set_status("Analysis complete! Ready.", True))
 
+    def _manual_analyze(self):
+        """Manually trigger analysis of any existing recordings."""
+        if getattr(self, "analyzing", False):
+            self._set_status("Already analyzing...", False)
+            return
+        # Stop any active recording first
+        self.blue_cam.stop_recording()
+        self.red_cam.stop_recording()
+        has_blue = os.path.exists("blue_record.avi")
+        has_red = os.path.exists("red_record.avi")
+        if not has_blue and not has_red:
+            self._set_status("No recordings found. Record a match first.", False)
+            return
+        self._set_status("ANALYZING RECORDINGS...", True)
+        threading.Thread(target=self._analyze_all, daemon=True).start()
+
     def _analyze_video(self, filepath, tracker, side):
+        tracker.reset()
         cap = cv2.VideoCapture(filepath)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if total_frames <= 0: total_frames = 1
+        
+        # Test if YOLO works on this machine; fall back to HSV-only if it crashes
+        can_yolo = False
+        if self.detector.ready:
+            try:
+                test_frame = np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8)
+                self.detector._yolo_detect(test_frame)
+                can_yolo = True
+                logging.info("YOLO available for analysis")
+            except Exception as e:
+                logging.warning(f"YOLO unavailable for analysis ({e}), using HSV-only")
+                can_yolo = False
         
         fno = 0
         while cap.isOpened():
@@ -896,14 +936,23 @@ class GoalScorerApp:
             fno += 1
             
             proc_frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
-            dets = self.detector.detect(proc_frame, use_yolo=True)
+            
+            try:
+                dets = self.detector.detect(proc_frame, use_yolo=can_yolo)
+            except Exception:
+                # If YOLO crashes mid-analysis, disable it and continue with HSV
+                can_yolo = False
+                dets = self.detector.detect(proc_frame, use_yolo=False)
+            
             tracked = tracker.update(dets)
             
             live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
             hw = tracker.confirmed_count
             
+            # Update UI every 10 frames to keep it responsive  
             if fno % 10 == 0:
-                def update_ui(h=hw, l=live_count, curr_f=fno, f=frame.copy()):
+                pct = int(fno / total_frames * 100)
+                def update_ui(h=hw, l=live_count, p=pct, f=cv2.resize(frame, (PROCESS_W, PROCESS_H))):
                     if side == "blue":
                         self.blue_hw = h
                         self.blue_live = l
@@ -912,8 +961,9 @@ class GoalScorerApp:
                         self.red_live = l
                     self._update_scores()
                     
-                    cv2.putText(f, f"Analyzing... {int(curr_f/total_frames*100)}%", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                    method = "YOLO+HSV" if can_yolo else "HSV-only"
+                    cv2.putText(f, f"Analyzing ({method})... {p}%", (10, 25),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
                     self._show_frame(f, side)
                 self.root.after(0, update_ui)
                 
