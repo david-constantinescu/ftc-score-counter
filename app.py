@@ -186,6 +186,26 @@ class CameraThread:
         self._running = False
         self._thread = None
         self.is_ready = False
+        
+        # Recording features
+        self.record_file = None
+        self.is_recording = False
+        self.writer = None
+
+    def start_recording(self, path):
+        with self.lock:
+            self.record_file = path
+            if self.writer:
+                self.writer.release()
+            self.writer = None
+            self.is_recording = True
+
+    def stop_recording(self):
+        with self.lock:
+            self.is_recording = False
+            if self.writer:
+                self.writer.release()
+                self.writer = None
 
     def open(self, src):
         self.stop()
@@ -237,6 +257,13 @@ class CameraThread:
             if ret:
                 with self.lock:
                     self.frame = frame
+                    if self.is_recording:
+                        if self.writer is None and self.record_file:
+                            h, w = frame.shape[:2]
+                            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                            self.writer = cv2.VideoWriter(self.record_file, fourcc, 30.0, (w, h))
+                        if self.writer:
+                            self.writer.write(frame)
                 fails = 0
             else:
                 fails += 1
@@ -822,7 +849,11 @@ class GoalScorerApp:
     def _begin_countdown(self):
         if self.timer_running:
             self._timer_started = True
-            self._set_status("Match started!", True)
+            self._set_status("Match started! RECORDING...", True)
+            self.blue_tracker.reset()
+            self.red_tracker.reset()
+            self.blue_cam.start_recording("blue_record.avi")
+            self.red_cam.start_recording("red_record.avi")
             self._tick()
 
     def _tick(self):
@@ -838,7 +869,66 @@ class GoalScorerApp:
             self.timer_running = False
             self.lbl_timer.configure(text="0:00", fg="#ff1744")
             self.audio.stop()
-            self._set_status("Match ended!", True)
+            self.blue_cam.stop_recording()
+            self.red_cam.stop_recording()
+            self._set_status("Match ended! ANALYZING RECORDING...", True)
+            threading.Thread(target=self._analyze_all, daemon=True).start()
+
+    def _analyze_all(self):
+        self.analyzing = True
+        if os.path.exists("blue_record.avi"):
+            self._analyze_video("blue_record.avi", self.blue_tracker, "blue")
+        if os.path.exists("red_record.avi"):
+            self._analyze_video("red_record.avi", self.red_tracker, "red")
+        
+        self.analyzing = False
+        self.root.after(0, lambda: self._set_status("Analysis complete! Ready.", True))
+
+    def _analyze_video(self, filepath, tracker, side):
+        cap = cv2.VideoCapture(filepath)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0: total_frames = 1
+        
+        fno = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
+            fno += 1
+            
+            proc_frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
+            dets = self.detector.detect(proc_frame, use_yolo=True)
+            tracked = tracker.update(dets)
+            
+            live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
+            hw = tracker.confirmed_count
+            
+            if fno % 10 == 0:
+                def update_ui(h=hw, l=live_count, curr_f=fno, f=frame.copy()):
+                    if side == "blue":
+                        self.blue_hw = h
+                        self.blue_live = l
+                    else:
+                        self.red_hw = h
+                        self.red_live = l
+                    self._update_scores()
+                    
+                    cv2.putText(f, f"Analyzing... {int(curr_f/total_frames*100)}%", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                    self._show_frame(f, side)
+                self.root.after(0, update_ui)
+                
+        cap.release()
+        
+        hw = tracker.confirmed_count
+        def finalize(h=hw):
+            if side == "blue":
+                self.blue_hw = h
+                self.blue_live = 0
+            else:
+                self.red_hw = h
+                self.red_live = 0
+            self._update_scores()
+        self.root.after(0, finalize)
 
     def _reset_timer(self):
         self.timer_running = False
@@ -894,16 +984,20 @@ class GoalScorerApp:
     def _video_loop(self):
         t0 = time.time()
         self._frame_no += 1
-        
-        # Run YOLO every frame for absolute maximum processing, size is so small it should easily keep up
-        use_yolo = self.detector.ready 
+
+        if getattr(self, "analyzing", False):
+            # Do nothing while analyzing, let the analyze loop handle the UI updates
+            self.root.after(100, self._video_loop)
+            return
 
         # Process BLUE
         if self.blue_cam.is_open():
             frame = self.blue_cam.grab()
             if frame is not None:
-                frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
-                self._process_frame(frame, self.blue_tracker, "blue", use_yolo)
+                # Just draw the raw live frame (no heavy YOLO during recording)
+                if self.timer_running and self._timer_started:
+                    cv2.putText(frame, "RECORDING...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                self._show_frame(frame, "blue")
         else:
             msg = "Loading..." if self.blue_cam._running else "No BLUE camera"
             self._show_placeholder(self.blue_canvas, msg)
@@ -912,8 +1006,9 @@ class GoalScorerApp:
         if self.red_cam.is_open():
             frame = self.red_cam.grab()
             if frame is not None:
-                frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
-                self._process_frame(frame, self.red_tracker, "red", use_yolo)
+                if self.timer_running and self._timer_started:
+                    cv2.putText(frame, "RECORDING...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                self._show_frame(frame, "red")
         else:
             msg = "Loading..." if self.red_cam._running else "No RED camera"
             self._show_placeholder(self.red_canvas, msg)
