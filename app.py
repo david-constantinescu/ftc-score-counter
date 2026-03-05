@@ -54,27 +54,31 @@ from ultralytics import YOLO
 # ── Constants ─────────────────────────────────────────────────────────────────
 # HSV colour ranges for purple and green foam balls
 # Broadened the ranges again to make sure both Green and Purple balls are easily picked up in any lighting
-PURPLE_LOW  = np.array([125, 60, 50])
-PURPLE_HIGH = np.array([160, 255, 255])
-GREEN_LOW   = np.array([35,  60, 50])
-GREEN_HIGH  = np.array([85,  255, 255])
+# TIGHTENED color ranges to resist shadows (increased Sat/Val limits, stricter Hue)
+# Balls must be BRIGHT and CLEAR (V >= 130) to avoid any dark shadows or wooden corners
+PURPLE_LOW  = np.array([125, 80, 100])
+PURPLE_HIGH = np.array([155, 255, 255])
+GREEN_LOW   = np.array([45,  100, 130])
+GREEN_HIGH  = np.array([80,  255, 255])
 
 # "Placed just above the corner of the goal" means balls fall through fast, 
 # but making minimum size much bigger to avoid tiny false positive blurs.
-MIN_BALL_AREA   = 6000     # Quite a lot bigger minimum size
-MAX_BALL_AREA   = 40000    # Lowered so it doesn't count massive merged blobs
-MIN_RADIUS      = 15
-MAX_RADIUS      = 115      # Lowered appropriately with MAX_BALL_AREA
-KERN_SIZE       = (7, 7)
-MIN_CIRCULARITY = 0.0     # Ignored
-CONFIRM_FRAMES  = 1        # Instant trigger
-
-PROCESS_W, PROCESS_H = 640, 480   # processing resolution
+PROCESS_W, PROCESS_H = 160, 120   # ABSOLUTE MAX SPEED processing resolution
 
 # YOLO sports-ball class in COCO = 32
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.30
+YOLO_CONF       = 0.25 # Lowered to catch blurred balls
 
+# ── Dynamic Sizing for Lower Res ──────────────────────────────────────────────
+# We divided resolution by 2, so area divides by 4, radius divides by 2
+# Re-adjusted constraints for ultra-small 160x120 resolution
+MIN_BALL_AREA   = 50      # tiny speck filter 
+MAX_BALL_AREA   = 19000   # entire screen
+MIN_RADIUS      = 4
+MAX_RADIUS      = 80      
+KERN_SIZE       = (5, 5)
+MIN_CIRCULARITY = 0.0     
+CONFIRM_FRAMES  = 1        # Instant trigger
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Centroid Tracker
@@ -82,9 +86,9 @@ YOLO_CONF       = 0.30
 class CentroidTracker:
     """Lightweight multi-object tracker by centroid distance."""
 
-    # Balls pass very quickly so max_dist must be huge to prevent getting double-counted 
-    # when the ball jumps a large portion of the frame in one tick
-    def __init__(self, max_disappeared=45, max_dist=400):
+    # Balls pass very quickly so max_disappeared should be very low so it doesn't "remember"
+    # a ball that already left and mistakenly assign its ID to the next ball entering.
+    def __init__(self, max_disappeared=5, max_dist=120):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -289,7 +293,7 @@ class BallDetector:
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
             classes=[YOLO_BALL_CLASS],
-            imgsz=320,
+            imgsz=160, # ABSOLUTE MAX SPEED: compute at hyper low res
         )
         out = []
         for r in results:
@@ -873,8 +877,10 @@ class GoalScorerApp:
     def _video_loop(self):
         t0 = time.time()
         self._frame_no += 1
-        # Set to False completely so we NEVER wait for the YOLO shape model. Just pure HSV color!
-        use_yolo = False
+        
+        # Use YOLO heavily spaced out to parse clustered balls if needed
+        # We run it every 2 frames to inject the "sports ball" logic into the blob detection
+        use_yolo = self.detector.ready and (self._frame_no % 2 == 0)
 
         # Process BLUE
         if self.blue_cam.is_open():
@@ -901,9 +907,8 @@ class GoalScorerApp:
         self._fps = 0.8 * self._fps + 0.2 * (1.0 / max(dt, 0.001))
         self.fps_lbl.configure(text=f"FPS: {self._fps:.0f}")
 
-        # Schedule next tick (run as fast as possible, target ~120 fps to not miss fast balls)
-        delay = max(1, 8 - int(dt * 1000))
-        self.root.after(delay, self._video_loop)
+        # ALWAYS execute instantly for absolute max possible framerate
+        self.root.after(1, self._video_loop)
 
     def _process_frame(self, frame, tracker, side, use_yolo):
         """Detect balls, update tracker & counts, draw overlays, display."""
