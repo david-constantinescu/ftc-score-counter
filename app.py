@@ -208,10 +208,10 @@ class CameraThread:
                 c = cv2.VideoCapture(s)
             
             if c.isOpened():
-                c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                c.set(cv2.CAP_PROP_FRAME_WIDTH, PROCESS_W)
-                c.set(cv2.CAP_PROP_FRAME_HEIGHT, PROCESS_H)
-                c.set(cv2.CAP_PROP_FPS, 120)  # Request ultra-high FPS from hardware 
+                # Removed explicit hardware CAP_PROP overrides (FPS, WIDTH, HEIGHT).
+                # Older cameras (like HP 630 / DirectShow / V4L2) throw "getstreamchannelgroup" or "out of range" errors 
+                # when asked for unsupported sizes or 120 FPS.
+                # We will just software-resize the frames later to guarantee compatibility.
                 return c
             return None
 
