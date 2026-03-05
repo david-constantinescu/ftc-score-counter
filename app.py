@@ -14,6 +14,7 @@ import subprocess
 import importlib.util
 import logging
 import threading
+import multiprocessing
 import time
 import signal
 import json
@@ -22,6 +23,10 @@ from tkinter import ttk, simpledialog
 from collections import OrderedDict
 
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
+# Set limits to maximize CPU usage
+os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
+os.environ["OPENBLAS_CORETYPE"] = "ARMV8"
+
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 logging.basicConfig(
@@ -50,6 +55,12 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 from ultralytics import YOLO
+import torch
+
+# Unlock purely all PyTorch & OpenCV CPU multithreading cores
+torch.set_num_threads(multiprocessing.cpu_count())
+cv2.setUseOptimized(True)
+cv2.setNumThreads(multiprocessing.cpu_count())
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 # HSV colour ranges for purple and green foam balls
@@ -60,19 +71,19 @@ PURPLE_HIGH = np.array([165, 255, 255])
 GREEN_LOW   = np.array([35,  50, 50])
 GREEN_HIGH  = np.array([85,  255, 255])
 
-# Absolute maximum speed middleground resolution (multiple of 32 for YOLO safety)
-PROCESS_W, PROCESS_H = 256, 192   # high speed but big enough to catch shape
+# High resolution but multi-threaded heavily to maintain FPS 
+PROCESS_W, PROCESS_H = 384, 288   # Larger exact multiple of 32
 
 # YOLO sports-ball class in COCO = 32
 YOLO_BALL_CLASS = 32
 YOLO_CONF       = 0.35 # Slightly higher to prevent random false positive boxes
 
 # ── Dynamic Sizing ──────────────────────────────────────────────
-# Re-adjusted constraints for 256x192 resolution
-MIN_BALL_AREA   = 100      # tiny speck filter 
-MAX_BALL_AREA   = 45000    # entire screen
-MIN_RADIUS      = 5
-MAX_RADIUS      = 120      
+# Re-adjusted constraints for 384x288 resolution
+MIN_BALL_AREA   = 200      # tiny speck filter 
+MAX_BALL_AREA   = 80000    # entire screen
+MIN_RADIUS      = 7
+MAX_RADIUS      = 150      
 KERN_SIZE       = (5, 5)
 MIN_CIRCULARITY = 0.0     
 CONFIRM_FRAMES  = 4        # Needs to be visible for at least 4 frames
@@ -292,7 +303,7 @@ class BallDetector:
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
             classes=[YOLO_BALL_CLASS],
-            imgsz=256, # Must be multiple of 32
+            imgsz=384, # Must be multiple of 32
         )
         out = []
         for r in results:
