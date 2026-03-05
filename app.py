@@ -202,10 +202,10 @@ class CameraThread:
         def connect():
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
-            elif sys.platform == "linux":
-                # Accept both /dev/videoN paths and integer indices
+            elif sys.platform == "linux" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_V4L2)
             else:
+                # /dev/videoN paths or other sources — let OpenCV pick backend
                 c = cv2.VideoCapture(s)
             return c if c.isOpened() else None
 
@@ -407,32 +407,55 @@ def _audio_cmd(cmd):
 import glob as _glob
 
 def _linux_v4l2_cameras():
-    """Enumerate V4L2 capture devices on Linux with real names."""
+    """Enumerate V4L2 capture devices on Linux with real names.
+    Uses v4l2-ctl --list-devices to get grouped output, falling back to sysfs.
+    Only returns the primary capture node per camera (not metadata nodes).
+    """
     cams = []
+
+    # Method 1: v4l2-ctl --list-devices (most reliable for grouping)
+    try:
+        p = subprocess.run(
+            ["v4l2-ctl", "--list-devices"],
+            capture_output=True, text=True, timeout=5)
+        if p.returncode == 0 and p.stdout.strip():
+            current_name = None
+            for line in p.stdout.splitlines():
+                line_s = line.strip()
+                if not line_s:
+                    continue
+                if not line.startswith("\t") and not line.startswith(" "):
+                    # Camera name line, e.g. "C270 HD WEBCAM (usb-...)"
+                    current_name = line_s.split(" (")[0].strip().rstrip(":")
+                elif current_name and line_s.startswith("/dev/video"):
+                    # First /dev/video* under a name is the capture node
+                    cams.append({"id": line_s, "name": f"{current_name} ({line_s})"})
+                    current_name = None  # skip subsequent nodes (metadata)
+            if cams:
+                return cams
+    except FileNotFoundError:
+        pass  # v4l2-ctl not installed
+    except Exception:
+        pass
+
+    # Method 2: sysfs — read device names, pick only capture-capable nodes
     devs = sorted(_glob.glob("/dev/video*"))
+    seen_buses = set()
     for dev in devs:
         idx_str = dev.replace("/dev/video", "")
         if not idx_str.isdigit():
             continue
-        # Read the human name from sysfs
         name_path = f"/sys/class/video4linux/video{idx_str}/name"
         try:
             with open(name_path) as f:
                 hw_name = f.read().strip()
         except Exception:
             hw_name = f"Camera {idx_str}"
-        # Check device is a capture device (not metadata) by attempting a read
-        try:
-            cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
-            if cap.isOpened():
-                ret, _ = cap.read()
-                cap.release()
-                if ret:
-                    cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
-            else:
-                cap.release()
-        except Exception:
-            pass
+        # Deduplicate by name (first device per name is the capture node)
+        if hw_name in seen_buses:
+            continue
+        seen_buses.add(hw_name)
+        cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
     return cams
 
 def scan_cameras():
