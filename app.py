@@ -661,6 +661,15 @@ class GoalScorerApp:
         ttk.Button(red_btn_row, text="Clear Red", width=10,
                    command=self._clear_red).pack(side=tk.LEFT, padx=8)
 
+        # ── Analysis progress bar (white/black, hidden by default) ────────
+        self._progress_frame = tk.Frame(self.root, bg="black", height=8)
+        self._progress_frame.pack(fill=tk.X, side=tk.TOP)
+        self._progress_frame.pack_forget()  # hidden until analysis starts
+        self._progress_canvas = tk.Canvas(self._progress_frame, bg="black",
+                                           height=8, highlightthickness=0)
+        self._progress_canvas.pack(fill=tk.X)
+        self._progress_bar = None
+
         # ── Status bar ───────────────────────────────────────────────────
         sb = tk.Frame(self.root, bg=self.DARK, height=26)
         sb.pack(fill=tk.X, side=tk.BOTTOM)
@@ -885,15 +894,42 @@ class GoalScorerApp:
             self._set_status("Match ended! ANALYZING RECORDING...", True)
             threading.Thread(target=self._analyze_all, daemon=True).start()
 
+    def _show_progress(self, fraction):
+        """Update the white/black progress bar at the top."""
+        if not self._progress_frame.winfo_ismapped():
+            self._progress_frame.pack(fill=tk.X, side=tk.TOP)
+        self._progress_canvas.update_idletasks()
+        self._progress_canvas.delete("all")
+        w = self._progress_canvas.winfo_width() or 800
+        filled = max(1, int(w * fraction))
+        self._progress_canvas.create_rectangle(0, 0, filled, 8, fill="white", outline="")
+
+    def _hide_progress(self):
+        self._progress_frame.pack_forget()
+
     def _analyze_all(self):
         self.analyzing = True
+        self.root.after(0, lambda: self._show_progress(0.0))
+        
+        jobs = []
         if os.path.exists("blue_record.avi"):
-            self._analyze_video("blue_record.avi", self.blue_tracker, "blue")
+            jobs.append(("blue_record.avi", self.blue_tracker, "blue"))
         if os.path.exists("red_record.avi"):
-            self._analyze_video("red_record.avi", self.red_tracker, "red")
+            jobs.append(("red_record.avi", self.red_tracker, "red"))
+        
+        total_all = 0
+        done_all = [0]
+        for path, _, _ in jobs:
+            cap = cv2.VideoCapture(path)
+            total_all += max(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 1)
+            cap.release()
+        if total_all == 0: total_all = 1
+        
+        for path, tracker, side in jobs:
+            self._analyze_video(path, tracker, side, done_all, total_all)
         
         self.analyzing = False
-        self.root.after(0, lambda: self._set_status("Analysis complete! Ready.", True))
+        self.root.after(0, lambda: (self._hide_progress(), self._set_status("Analysis complete! Ready.", True)))
 
     def _manual_analyze(self):
         """Manually trigger analysis of any existing recordings."""
@@ -911,7 +947,9 @@ class GoalScorerApp:
         self._set_status("ANALYZING RECORDINGS...", True)
         threading.Thread(target=self._analyze_all, daemon=True).start()
 
-    def _analyze_video(self, filepath, tracker, side):
+    def _analyze_video(self, filepath, tracker, side, done_all, total_all):
+        from concurrent.futures import ThreadPoolExecutor
+        
         tracker.reset()
         cap = cv2.VideoCapture(filepath)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -929,45 +967,88 @@ class GoalScorerApp:
                 logging.warning(f"YOLO unavailable for analysis ({e}), using HSV-only")
                 can_yolo = False
         
-        fno = 0
+        num_workers = max(1, multiprocessing.cpu_count())
+        
+        def _hsv_only_detect(proc_frame):
+            """Run HSV detection on a single frame (thread-safe, no YOLO)."""
+            hsv = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2HSV)
+            dets = []
+            dets += self.detector._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
+            dets += self.detector._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
+            return dets
+        
+        # Read all frames into memory in batches for maximum throughput
+        BATCH = num_workers * 4  # process many frames per batch
+        raw_frames = []
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret: break
-            fno += 1
-            
-            proc_frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
-            
-            try:
-                dets = self.detector.detect(proc_frame, use_yolo=can_yolo)
-            except Exception:
-                # If YOLO crashes mid-analysis, disable it and continue with HSV
-                can_yolo = False
-                dets = self.detector.detect(proc_frame, use_yolo=False)
-            
-            tracked = tracker.update(dets)
-            
-            live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
-            hw = tracker.confirmed_count
-            
-            # Update UI every 10 frames to keep it responsive  
-            if fno % 10 == 0:
-                pct = int(fno / total_frames * 100)
-                def update_ui(h=hw, l=live_count, p=pct, f=cv2.resize(frame, (PROCESS_W, PROCESS_H))):
-                    if side == "blue":
-                        self.blue_hw = h
-                        self.blue_live = l
-                    else:
-                        self.red_hw = h
-                        self.red_live = l
-                    self._update_scores()
-                    
-                    method = "YOLO+HSV" if can_yolo else "HSV-only"
-                    cv2.putText(f, f"Analyzing ({method})... {p}%", (10, 25),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-                    self._show_frame(f, side)
-                self.root.after(0, update_ui)
-                
+            raw_frames.append(frame)
         cap.release()
+        
+        total_frames = len(raw_frames) if raw_frames else 1
+        
+        # Process in parallel batches
+        executor = ThreadPoolExecutor(max_workers=num_workers)
+        
+        for batch_start in range(0, len(raw_frames), BATCH):
+            batch = raw_frames[batch_start:batch_start + BATCH]
+            proc_batch = [cv2.resize(f, (PROCESS_W, PROCESS_H)) for f in batch]
+            
+            # Submit HSV detection for all batch frames in parallel
+            futures = [executor.submit(_hsv_only_detect, pf) for pf in proc_batch]
+            hsv_results = [fut.result() for fut in futures]
+            
+            # YOLO must run sequentially (model is not thread-safe)
+            yolo_results = [None] * len(proc_batch)
+            if can_yolo:
+                for i, pf in enumerate(proc_batch):
+                    try:
+                        yolo_results[i] = self.detector._yolo_detect(pf)
+                    except Exception:
+                        can_yolo = False
+                        yolo_results[i] = []
+            
+            # Merge detections and update tracker sequentially (tracker is stateful)
+            for i, pf in enumerate(proc_batch):
+                fno = batch_start + i + 1
+                hsv_dets = hsv_results[i]
+                yol_dets = yolo_results[i] or []
+                
+                # Merge: prefer YOLO, add non-overlapping HSV
+                dets = list(yol_dets)
+                for hd in hsv_dets:
+                    is_dup = False
+                    for yd in yol_dets:
+                        dist = ((yd["x"] - hd["x"]) ** 2 + (yd["y"] - hd["y"]) ** 2) ** 0.5
+                        if dist < max(yd["radius"], hd["radius"]) * 1.5:
+                            is_dup = True
+                            break
+                    if not is_dup:
+                        dets.append(hd)
+                
+                tracked = tracker.update(dets)
+                live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
+                hw = tracker.confirmed_count
+                done_all[0] += 1
+                
+                # Update UI every 5 frames — show the frame being analyzed + progress bar
+                if fno % 5 == 0 or fno == total_frames:
+                    overall_frac = done_all[0] / total_all
+                    def update_ui(h=hw, l=live_count, fr=pf.copy(), frac=overall_frac):
+                        if side == "blue":
+                            self.blue_hw = h
+                            self.blue_live = l
+                        else:
+                            self.red_hw = h
+                            self.red_live = l
+                        self._update_scores()
+                        self._show_progress(frac)
+                        self._show_frame(fr, side)
+                    self.root.after(0, update_ui)
+        
+        executor.shutdown(wait=False)
         
         hw = tracker.confirmed_count
         def finalize(h=hw):
