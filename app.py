@@ -1,10 +1,10 @@
 """
-DECODE Goal Scorer — Dual Camera Ball Counter (Tkinter + YOLOv8)
+DECODE Goal Scorer — Web Server
 ════════════════════════════════════════════════════════════════════
-Two cameras placed above the goals (one RED, one BLUE).
-Counts balls going into each goal regardless of color (green/purple).
-Uses YOLOv8 for ball detection + HSV colour backup.
-Maximum-performance tkinter UI with threaded capture & inference.
+Flask-based dual-camera ball counting system.
+Streams MJPEG video, sends real-time scores via SSE, and exposes
+REST API for match control. Optimised for Intel CPU (Dell Optiplex).
+Timer audio plays on the CLIENT browser, not the server.
 """
 
 import sys
@@ -16,21 +16,14 @@ import logging
 import threading
 import multiprocessing
 import time
-import signal
 import json
-import tkinter as tk
-from tkinter import ttk, simpledialog
 from collections import OrderedDict
 
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
-# Set limits to maximize CPU usage
 os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
-# Disable NNPACK to avoid "unsupported hardware" crash on older CPUs (like older Intel models)
 os.environ["USE_NNPACK"] = "0"
 
-
 warnings.filterwarnings("ignore", category=RuntimeWarning)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-7s  %(message)s",
@@ -40,13 +33,13 @@ logging.basicConfig(
 def _install_deps():
     pkgs = {
         "opencv-python": "cv2",
-        "pillow": "PIL",
         "numpy": "numpy",
         "ultralytics": "ultralytics",
+        "flask": "flask",
     }
     missing = [p for p, m in pkgs.items() if importlib.util.find_spec(m) is None]
     if missing:
-        print(f"Installing: {missing}")
+        logging.info(f"Installing: {missing}")
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "--quiet"] + missing
         )
@@ -55,16 +48,17 @@ _install_deps()
 
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
 from ultralytics import YOLO
 import torch
+from flask import (Flask, Response, jsonify, request,
+                   render_template, send_from_directory)
 
-# Unlock purely all PyTorch & OpenCV CPU multithreading cores
+# Maximise CPU threading for Intel
 torch.set_num_threads(multiprocessing.cpu_count())
 cv2.setUseOptimized(True)
 cv2.setNumThreads(multiprocessing.cpu_count())
 
-# ── GPU acceleration (Apple Silicon MPS / NVIDIA CUDA) ────────────────────────
+# ── Device detection ──────────────────────────────────────────────────────────
 def _detect_device():
     if torch.cuda.is_available():
         name = torch.cuda.get_device_name(0)
@@ -73,55 +67,45 @@ def _detect_device():
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         logging.info("Apple Silicon GPU detected (MPS)")
         return "mps"
-    logging.info("No GPU detected — using CPU")
+    logging.info("No GPU — using CPU")
     return "cpu"
 
 DEVICE = _detect_device()
-USE_HALF = DEVICE in ("cuda", "mps")
+USE_HALF = DEVICE in ("cuda",)  # MPS half is flaky on some models; CUDA only
 logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-# HSV colour ranges for purple and green foam balls
-# Broadened the ranges again to make sure both Green and Purple balls are easily picked up in any lighting
-# WIDENED color ranges heavily but raised Saturation/Value slightly to avoid pitch black/grey shadows
 PURPLE_LOW  = np.array([105, 50, 50])
 PURPLE_HIGH = np.array([165, 255, 255])
 GREEN_LOW   = np.array([35,  50, 50])
 GREEN_HIGH  = np.array([85,  255, 255])
 
-# High resolution but multi-threaded heavily to maintain FPS 
-PROCESS_W, PROCESS_H = 384, 288   # Larger exact multiple of 32
+PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
-# YOLO sports-ball class in COCO = 32
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.35 # Slightly higher to prevent random false positive boxes
+YOLO_CONF       = 0.35
 
-# ── Dynamic Sizing ──────────────────────────────────────────────
-# Re-adjusted constraints for 384x288 resolution
-MIN_BALL_AREA   = 200      # tiny speck filter 
-MAX_BALL_AREA   = 80000    # entire screen
+MIN_BALL_AREA   = 200
+MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 7
-MAX_RADIUS      = 150      
+MAX_RADIUS      = 150
 KERN_SIZE       = (5, 5)
-MIN_CIRCULARITY = 0.0     
-CONFIRM_FRAMES  = 4        # Needs to be visible for at least 4 frames
+CONFIRM_FRAMES  = 4
+
+STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    """Lightweight multi-object tracker by centroid distance."""
-
-    # Balls pass very quickly so max_disappeared should be incredibly low.
-    # We want it to quickly completely forget a ball if it vanishes, 
-    # so a new ball entering the frame shortly after creates a NEW count.
     def __init__(self, max_disappeared=30, max_dist=120):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
         self.max_disappeared = max_disappeared
         self.max_dist = max_dist
-        self.ever_confirmed = set()   # IDs that passed CONFIRM_FRAMES
+        self.ever_confirmed = set()
 
     def reset(self):
         self.next_id = 0
@@ -131,7 +115,6 @@ class CentroidTracker:
 
     @property
     def confirmed_count(self):
-        """How many unique balls have been confirmed (high-water)."""
         return len(self.ever_confirmed)
 
     def update(self, dets):
@@ -191,7 +174,7 @@ class CentroidTracker:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Threaded Camera Capture  (always grabs the freshest frame)
+#  Camera Thread  (always grabs the freshest frame)
 # ══════════════════════════════════════════════════════════════════════════════
 class CameraThread:
     def __init__(self):
@@ -202,26 +185,6 @@ class CameraThread:
         self._running = False
         self._thread = None
         self.is_ready = False
-        
-        # Recording features
-        self.record_file = None
-        self.is_recording = False
-        self.writer = None
-
-    def start_recording(self, path):
-        with self.lock:
-            self.record_file = path
-            if self.writer:
-                self.writer.release()
-            self.writer = None
-            self.is_recording = True
-
-    def stop_recording(self):
-        with self.lock:
-            self.is_recording = False
-            if self.writer:
-                self.writer.release()
-                self.writer = None
 
     def open(self, src):
         self.stop()
@@ -234,35 +197,26 @@ class CameraThread:
         return True
 
     def _loop(self, src):
-        s = int(src) if isinstance(src, str) and src.isdigit() else src
-        
+        s = int(src) if isinstance(src, str) and str(src).isdigit() else src
+
         def connect():
-            # On macOS, use AVFoundation directly to avoid out-of-bound or V4L warnings
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
+            elif sys.platform == "linux" and isinstance(s, int):
+                c = cv2.VideoCapture(s, cv2.CAP_V4L2)
             else:
                 c = cv2.VideoCapture(s)
-            
-            if c.isOpened():
-                # Removed explicit hardware CAP_PROP overrides (FPS, WIDTH, HEIGHT).
-                # Older cameras (like HP 630 / DirectShow / V4L2) throw "getstreamchannelgroup" or "out of range" errors 
-                # when asked for unsupported sizes or 120 FPS.
-                # We will just software-resize the frames later to guarantee compatibility.
-                return c
-            return None
+            return c if c.isOpened() else None
 
         self.cap = connect()
         if self.cap:
             self.is_ready = True
-        else:
-            self.is_ready = False
-            # We don't abort instantly; we will retry in the loop if disconnected
-            
+
         fails = 0
         while self._running:
             if not self.cap or not self.cap.isOpened():
                 self.is_ready = False
-                time.sleep(1.0)  # Wait before retrying connection
+                time.sleep(1.0)
                 self.cap = connect()
                 if self.cap:
                     self.is_ready = True
@@ -273,31 +227,22 @@ class CameraThread:
             if ret:
                 with self.lock:
                     self.frame = frame
-                    if self.is_recording:
-                        if self.writer is None and self.record_file:
-                            h, w = frame.shape[:2]
-                            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-                            self.writer = cv2.VideoWriter(self.record_file, fourcc, 30.0, (w, h))
-                        if self.writer:
-                            self.writer.write(frame)
                 fails = 0
             else:
                 fails += 1
                 if fails > 30:
-                    # If we fail for ~30 consecutive attempts, assume disconnected and restart
+                    logging.warning(f"Camera {src}: 30 consecutive fails, reconnecting")
                     self.cap.release()
                     self.cap = None
                     self.is_ready = False
                 time.sleep(0.01)
-                
-        # Graceful background cleanup (prevents blocking the main GUI thread)
+
         if self.cap:
             self.cap.release()
             self.cap = None
         self.is_ready = False
 
     def grab(self):
-        """Return the latest frame (or None)."""
         with self.lock:
             return self.frame.copy() if self.frame is not None else None
 
@@ -305,8 +250,6 @@ class CameraThread:
         return self.is_ready and self._running
 
     def stop(self):
-        # Set running false to break loop. 
-        # Do NOT release the camera here, let the background thread do it to prevent GUI freezes.
         self._running = False
         with self.lock:
             self.frame = None
@@ -321,52 +264,46 @@ class BallDetector:
         self.ready = False
 
     def load(self, callback=None):
-        """Load YOLOv8n model (blocking — call from background thread)."""
         try:
             model_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
+            if not os.path.exists(model_path):
+                model_path = "yolov8n.pt"  # ultralytics will auto-download
             self.yolo = YOLO(model_path)
-            # Move model to best available device (CUDA / MPS / CPU)
             self.yolo.to(DEVICE)
-            # Warm up on target device with FP16 if GPU
             self.yolo.predict(
                 np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8),
                 verbose=False, conf=YOLO_CONF,
-                device=DEVICE,
-                half=USE_HALF,
+                device=DEVICE, half=USE_HALF,
             )
             self.ready = True
-            logging.info(f"YOLOv8n loaded on {DEVICE}" + (" (FP16)" if USE_HALF else ""))
+            msg = f"YOLOv8n ready [{DEVICE.upper()}]"
+            logging.info(msg)
             if callback:
-                callback(True, f"YOLOv8n ready [{DEVICE.upper()}]")
+                callback(True, msg)
         except Exception as e:
             logging.error(f"YOLOv8 load error: {e}")
             self.ready = False
             if callback:
                 callback(False, f"YOLO failed — HSV only ({e})")
 
-    # ── YOLO detection ───────────────────────────────────────────────────
     def _yolo_detect(self, frame):
         if not self.ready:
             return []
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
             classes=[YOLO_BALL_CLASS],
-            imgsz=384,
-            device=DEVICE,
-            half=USE_HALF,
+            imgsz=384, device=DEVICE, half=USE_HALF,
         )
         out = []
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 w, h = x2 - x1, y2 - y1
-                # Reject boxes that are too small or too large (likely merged balls)
                 if w < MIN_RADIUS * 2 or h < MIN_RADIUS * 2:
                     continue
                 if w > MAX_RADIUS * 2 or h > MAX_RADIUS * 2:
                     continue
-                # Reject non-square-ish boxes (aspect ratio filter)
                 aspect = max(w, h) / max(min(w, h), 1)
                 if aspect > 2.0:
                     continue
@@ -375,48 +312,37 @@ class BallDetector:
                 out.append({"x": cx, "y": cy, "radius": radius, "src": "yolo"})
         return out
 
-    # ── HSV detection ────────────────────────────────────────────────────
     def _hsv_detect(self, hsv, low, high):
         mask = cv2.inRange(hsv, low, high)
         kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern, iterations=1)
-        
-        # Erode the mask to literally create "spaces" between touching balls 
-        # so they count as distinct objects instead of one giant blob
         mask = cv2.erode(mask, kern, iterations=2)
-        
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
         out = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < MIN_BALL_AREA or area > MAX_BALL_AREA:
                 continue
-            
-            # Since we just want color and NOT shape, skip the circularity entirely
             (cx, cy), r = cv2.minEnclosingCircle(cnt)
             out.append({"x": int(cx), "y": int(cy), "radius": int(r), "src": "hsv"})
         return out
 
-    # ── Combined detection ───────────────────────────────────────────────
     def detect(self, frame, use_yolo=True):
-        """Detect balls. Returns list of {x, y, radius}."""
         yol_dets = []
         if use_yolo and self.ready:
             yol_dets = self._yolo_detect(frame)
-
-        # Always run HSV (fast, catches coloured foam balls reliably)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         hsv_dets = []
         hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
         hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
-
-        # Merge them: Prefer YOLO. Add HSV only if it doesn't overlap YOLO.
         dets = list(yol_dets)
         for hd in hsv_dets:
             is_dup = False
             for yd in yol_dets:
-                dist = ((yd["x"] - hd["x"]) ** 2 + (yd["y"] - hd["y"]) ** 2) ** 0.5
+                dist = ((yd["x"] - hd["x"]) ** 2 +
+                        (yd["y"] - hd["y"]) ** 2) ** 0.5
                 if dist < max(yd["radius"], hd["radius"]) * 1.5:
                     is_dup = True
                     break
@@ -426,917 +352,416 @@ class BallDetector:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Audio Player (macOS afplay)
+#  Flask Application
 # ══════════════════════════════════════════════════════════════════════════════
-class AudioPlayer:
-    def __init__(self, filename="ftctimer.mp3"):
-        base = os.path.dirname(os.path.abspath(__file__))
-        path = os.path.join(base, filename)
-        self.path = path if os.path.exists(path) else None
-        self.proc = None
-        self.paused = False
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__,
+            static_folder=os.path.join(BASE_DIR, "static"),
+            template_folder=os.path.join(BASE_DIR, "templates"))
 
-    def play(self):
-        self.stop()
-        if not self.path:
-            return
+# ── Global objects ────────────────────────────────────────────────────────────
+blue_cam = CameraThread()
+red_cam  = CameraThread()
+blue_tracker = CentroidTracker()
+red_tracker  = CentroidTracker()
+detector = BallDetector()
+
+state_lock = threading.Lock()
+state = {
+    "blue_hw": 0, "red_hw": 0,
+    "blue_live": 0, "red_live": 0,
+    "timer_seconds": 150,
+    "timer_running": False,
+    "timer_started": False,
+    "status": "Initializing…",
+    "status_ok": False,
+    "device": DEVICE,
+    "infer_fps": 0.0,
+    "audio_cmd": None,
+    "audio_seq": 0,
+}
+
+# Latest processed frames (pre-encoded JPEG bytes)
+frame_lock = threading.Lock()
+latest_blue_jpg = None
+latest_red_jpg  = None
+
+_infer_running = True
+_timer_tick_time = 0.0
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _set_status(msg, ok=True):
+    with state_lock:
+        state["status"] = msg
+        state["status_ok"] = ok
+
+def _audio_cmd(cmd):
+    with state_lock:
+        state["audio_cmd"] = cmd
+        state["audio_seq"] += 1
+
+
+# ── Camera scanning ──────────────────────────────────────────────────────────
+def scan_cameras():
+    cams = []
+    if sys.platform == "darwin":
         try:
-            self.proc = subprocess.Popen(
-                ["afplay", self.path],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-            self.paused = False
-        except Exception as e:
-            logging.error(f"Audio play: {e}")
+            p = subprocess.run(
+                ["system_profiler", "SPCameraDataType", "-json"],
+                capture_output=True, text=True, timeout=5)
+            if p.returncode == 0:
+                items = json.loads(p.stdout).get("SPCameraDataType", [])
+                for i, item in enumerate(items):
+                    cams.append({"id": i, "name": f"{i}: {item.get('_name', f'Camera {i}')}"})
+                if cams:
+                    return cams
+        except Exception:
+            pass
+    # Probe by index (works on Linux / Windows too)
+    for idx in range(8):
+        try:
+            cap = cv2.VideoCapture(idx)
+            if cap.isOpened() and cap.read()[0]:
+                cams.append({"id": idx, "name": f"{idx}: Camera {idx}"})
+            cap.release()
+        except Exception:
+            pass
+    return cams or [{"id": 0, "name": "0: Default Camera"}]
 
-    def pause(self):
-        if self.proc and self.proc.poll() is None and not self.paused:
-            try:
-                os.kill(self.proc.pid, signal.SIGSTOP)
-                self.paused = True
-            except Exception:
-                pass
 
-    def resume(self):
-        if self.proc and self.paused:
-            try:
-                os.kill(self.proc.pid, signal.SIGCONT)
-                self.paused = False
-            except Exception:
-                pass
+# ── Placeholder frame ────────────────────────────────────────────────────────
+def _placeholder_jpg(text):
+    img = np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8)
+    cv2.putText(img, text, (30, PROCESS_H // 2),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 128, 128), 2)
+    _, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 50])
+    return buf.tobytes()
 
-    def stop(self):
-        if self.proc:
-            try:
-                if self.paused:
-                    os.kill(self.proc.pid, signal.SIGCONT)
-                self.proc.terminate()
-            except Exception:
-                pass
-            self.proc = None
-            self.paused = False
+_no_blue_jpg = _placeholder_jpg("No BLUE camera")
+_no_red_jpg  = _placeholder_jpg("No RED camera")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Main Application
+#  Background Threads
 # ══════════════════════════════════════════════════════════════════════════════
-class GoalScorerApp:
-    # Colours
-    BG      = "#0f0f23"
-    FG      = "#e0e0e0"
-    BLUE_C  = "#42a5f5"
-    RED_C   = "#ef5350"
-    ACCENT  = "#ffd740"
-    DARK    = "#1a1a2e"
+def inference_loop():
+    """Continuously process frames from both cameras (runs on server)."""
+    global latest_blue_jpg, latest_red_jpg
+    infer_fps = 0.0
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, STREAM_QUALITY]
 
-    def __init__(self, root):
-        self.root = root
-        self.root.title("DECODE Goal Scorer")
-        self.root.geometry("1340x760")
-        self.root.configure(bg=self.BG)
-        self.root.minsize(1000, 600)
+    while _infer_running:
+        t0 = time.time()
+        processed = False
 
-        self.detector = BallDetector()
+        for side, cam, tracker in [
+            ("blue", blue_cam, blue_tracker),
+            ("red",  red_cam,  red_tracker),
+        ]:
+            if not cam.is_open():
+                continue
+            frame = cam.grab()
+            if frame is None:
+                continue
 
-        self.blue_cam = CameraThread()
-        self.red_cam  = CameraThread()
-        self.blue_tracker = CentroidTracker()
-        self.red_tracker  = CentroidTracker()
-
-        # High-water ball counts (never decrease until reset)
-        self.blue_hw = 0
-        self.red_hw  = 0
-
-        # Live count (current visible confirmed balls)
-        self.blue_live = 0
-        self.red_live  = 0
-
-        # Timer
-        self.timer_seconds = 150
-        self.timer_running = False
-        self._timer_started = False
-
-        self.audio = AudioPlayer()
-
-        # Frame counter
-        self._frame_no = 0
-
-        # FPS
-        self._fps = 0.0
-        self._infer_fps = 0.0
-
-        # Live inference results (written by inference thread, read by UI)
-        self._latest_blue = None   # (frame, hw, live_count)
-        self._latest_red = None
-        self._result_lock = threading.Lock()
-        self._infer_running = True
-
-        # Tk image references (prevent GC)
-        self._blue_imgtk = None
-        self._red_imgtk  = None
-
-        self._build_ui()
-
-        # Load YOLO in background
-        self._set_status(f"Loading YOLOv8 on {DEVICE.upper()} …", False)
-        threading.Thread(target=self._load_yolo, daemon=True).start()
-
-        # Start background inference thread (processes both cameras live)
-        threading.Thread(target=self._inference_loop, daemon=True).start()
-
-        # Scan cameras after UI is shown
-        self.root.after(400, self._refresh_cameras)
-
-    # ── YOLO load ─────────────────────────────────────────────────────────
-    def _load_yolo(self):
-        self.detector.load(
-            callback=lambda ok, msg: self.root.after(
-                0, lambda: self._set_status(msg, ok))
-        )
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  UI Construction
-    # ══════════════════════════════════════════════════════════════════════
-    def _build_ui(self):
-        sty = ttk.Style()
-        sty.theme_use("clam")
-        sty.configure(".", background=self.BG, foreground=self.FG)
-        sty.configure("TFrame", background=self.BG)
-        sty.configure("TLabel", background=self.BG, foreground=self.FG)
-        sty.configure("TButton", padding=4)
-        sty.configure("TLabelframe", background=self.BG, foreground=self.FG)
-        sty.configure("TLabelframe.Label", background=self.BG,
-                       foreground=self.ACCENT, font=("Helvetica", 11, "bold"))
-
-        # ── Top bar: camera selectors + timer ─────────────────────────────
-        top = ttk.Frame(self.root, padding=6)
-        top.pack(fill=tk.X)
-
-        # BLUE camera
-        ttk.Label(top, text="BLUE Goal Cam:",
-                  foreground=self.BLUE_C,
-                  font=("Helvetica", 11, "bold")).pack(side=tk.LEFT, padx=(4, 2))
-        self.blue_cam_cb = ttk.Combobox(top, width=26)
-        self.blue_cam_cb.pack(side=tk.LEFT, padx=2)
-        self.blue_cam_cb.bind("<<ComboboxSelected>>", self._on_blue_cam)
-        self.blue_cam_cb.bind("<Return>", self._on_blue_cam)
-
-        ttk.Label(top, text="  ").pack(side=tk.LEFT)
-
-        # RED camera
-        ttk.Label(top, text="RED Goal Cam:",
-                  foreground=self.RED_C,
-                  font=("Helvetica", 11, "bold")).pack(side=tk.LEFT, padx=(4, 2))
-        self.red_cam_cb = ttk.Combobox(top, width=26)
-        self.red_cam_cb.pack(side=tk.LEFT, padx=2)
-        self.red_cam_cb.bind("<<ComboboxSelected>>", self._on_red_cam)
-        self.red_cam_cb.bind("<Return>", self._on_red_cam)
-
-        ttk.Button(top, text="Refresh", width=8,
-                   command=self._refresh_cameras).pack(side=tk.LEFT, padx=8)
-
-        # Timer
-        ttk.Label(top, text=" | ", foreground="gray").pack(side=tk.LEFT, padx=2)
-
-        self.lbl_timer = tk.Label(
-            top, text="2:30", font=("Helvetica", 28, "bold"),
-            fg=self.ACCENT, bg=self.DARK, width=6, anchor="center",
-            relief="groove", bd=2)
-        self.lbl_timer.pack(side=tk.LEFT, padx=6)
-
-        ttk.Button(top, text="Start / Pause", width=12,
-                   command=self._toggle_timer).pack(side=tk.LEFT, padx=3)
-        ttk.Button(top, text="Reset Timer", width=10,
-                   command=self._reset_timer).pack(side=tk.LEFT, padx=3)
-
-        ttk.Label(top, text=" | ", foreground="gray").pack(side=tk.LEFT, padx=2)
-        ttk.Button(top, text="Analyze Now", width=11,
-                   command=self._manual_analyze).pack(side=tk.LEFT, padx=3)
-        ttk.Button(top, text="Reset All", width=9,
-                   command=self._reset_all).pack(side=tk.LEFT, padx=3)
-
-        # ── Main area: two panels side-by-side ────────────────────────────
-        main = ttk.Frame(self.root, padding=4)
-        main.pack(fill=tk.BOTH, expand=True)
-        main.columnconfigure(0, weight=1)
-        main.columnconfigure(1, weight=1)
-        main.rowconfigure(0, weight=1)
-
-        # ── BLUE panel ────────────────────────────────────────────────────
-        blue_panel = ttk.LabelFrame(main, text="  BLUE GOAL  ", padding=4)
-        blue_panel.grid(row=0, column=0, sticky="nsew", padx=(2, 4), pady=2)
-        blue_panel.rowconfigure(0, weight=1)
-        blue_panel.columnconfigure(0, weight=1)
-
-        self.blue_canvas = tk.Canvas(blue_panel, bg="black",
-                                      highlightthickness=0)
-        self.blue_canvas.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-        self._blue_img_id = None
-
-        blue_score_frame = tk.Frame(blue_panel, bg=self.DARK)
-        blue_score_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-
-        self.blue_score_lbl = tk.Label(
-            blue_score_frame, text="0", font=("Helvetica", 72, "bold"),
-            fg=self.BLUE_C, bg=self.DARK, anchor="center")
-        self.blue_score_lbl.pack(fill=tk.X)
-
-        self.blue_info_lbl = tk.Label(
-            blue_score_frame, text="balls scored  |  live: 0",
-            font=("Helvetica", 13), fg="#90caf9", bg=self.DARK)
-        self.blue_info_lbl.pack()
-
-        blue_btn_row = tk.Frame(blue_panel, bg=self.BG)
-        blue_btn_row.grid(row=2, column=0, sticky="ew", pady=4)
-        ttk.Button(blue_btn_row, text="+1", width=4,
-                   command=lambda: self._manual_adj("blue", 1)).pack(
-                       side=tk.LEFT, padx=4)
-        ttk.Button(blue_btn_row, text="-1", width=4,
-                   command=lambda: self._manual_adj("blue", -1)).pack(
-                       side=tk.LEFT, padx=2)
-        ttk.Button(blue_btn_row, text="Clear Blue", width=10,
-                   command=self._clear_blue).pack(side=tk.LEFT, padx=8)
-
-        # ── RED panel ─────────────────────────────────────────────────────
-        red_panel = ttk.LabelFrame(main, text="  RED GOAL  ", padding=4)
-        red_panel.grid(row=0, column=1, sticky="nsew", padx=(4, 2), pady=2)
-        red_panel.rowconfigure(0, weight=1)
-        red_panel.columnconfigure(0, weight=1)
-
-        self.red_canvas = tk.Canvas(red_panel, bg="black",
-                                     highlightthickness=0)
-        self.red_canvas.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-        self._red_img_id = None
-
-        red_score_frame = tk.Frame(red_panel, bg=self.DARK)
-        red_score_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-
-        self.red_score_lbl = tk.Label(
-            red_score_frame, text="0", font=("Helvetica", 72, "bold"),
-            fg=self.RED_C, bg=self.DARK, anchor="center")
-        self.red_score_lbl.pack(fill=tk.X)
-
-        self.red_info_lbl = tk.Label(
-            red_score_frame, text="balls scored  |  live: 0",
-            font=("Helvetica", 13), fg="#ef9a9a", bg=self.DARK)
-        self.red_info_lbl.pack()
-
-        red_btn_row = tk.Frame(red_panel, bg=self.BG)
-        red_btn_row.grid(row=2, column=0, sticky="ew", pady=4)
-        ttk.Button(red_btn_row, text="+1", width=4,
-                   command=lambda: self._manual_adj("red", 1)).pack(
-                       side=tk.LEFT, padx=4)
-        ttk.Button(red_btn_row, text="-1", width=4,
-                   command=lambda: self._manual_adj("red", -1)).pack(
-                       side=tk.LEFT, padx=2)
-        ttk.Button(red_btn_row, text="Clear Red", width=10,
-                   command=self._clear_red).pack(side=tk.LEFT, padx=8)
-
-        # ── Analysis progress bar (white/black, hidden by default) ────────
-        self._progress_frame = tk.Frame(self.root, bg="black", height=8)
-        self._progress_frame.pack(fill=tk.X, side=tk.TOP)
-        self._progress_frame.pack_forget()  # hidden until analysis starts
-        self._progress_canvas = tk.Canvas(self._progress_frame, bg="black",
-                                           height=8, highlightthickness=0)
-        self._progress_canvas.pack(fill=tk.X)
-        self._progress_bar = None
-
-        # ── Status bar ───────────────────────────────────────────────────
-        sb = tk.Frame(self.root, bg=self.DARK, height=26)
-        sb.pack(fill=tk.X, side=tk.BOTTOM)
-
-        self.status_dot = tk.Canvas(sb, width=14, height=14,
-                                     bg=self.DARK, highlightthickness=0)
-        self.status_dot.pack(side=tk.LEFT, padx=6, pady=4)
-        self._dot = self.status_dot.create_oval(2, 2, 12, 12, fill="gray")
-
-        self.status_lbl = tk.Label(sb, text="Initializing …",
-                                    font=("Helvetica", 10), fg="gray",
-                                    bg=self.DARK)
-        self.status_lbl.pack(side=tk.LEFT)
-
-        self.fps_lbl = tk.Label(sb, text="", font=("Helvetica", 10),
-                                 fg="gray", bg=self.DARK)
-        self.fps_lbl.pack(side=tk.RIGHT, padx=8)
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  Status helper
-    # ══════════════════════════════════════════════════════════════════════
-    def _set_status(self, msg, ok=True):
-        self.status_dot.itemconfig(self._dot,
-                                    fill="#4caf50" if ok else "#e53935")
-        self.status_lbl.configure(text=msg)
-    # ══════════════════════════════════════════════════════════════════════
-    #  Camera management
-    # ══════════════════════════════════════════════════════════════════════
-    def _scan_cameras(self):
-        cams = []
-        # Suppress errors by querying macOS native system profiler first
-        if sys.platform == "darwin":
+            proc = cv2.resize(frame, (PROCESS_W, PROCESS_H))
             try:
-                p = subprocess.run(
-                    ["system_profiler", "SPCameraDataType", "-json"],
-                    capture_output=True, text=True, timeout=5)
-                if p.returncode == 0:
-                    items = json.loads(p.stdout).get("SPCameraDataType", [])
-                    for i, item in enumerate(items):
-                        cams.append(f"{i}: {item.get('_name', f'Camera {i}')}")
-                    if cams:
-                        return cams
+                dets = detector.detect(proc, use_yolo=detector.ready)
             except Exception:
-                pass
+                dets = detector.detect(proc, use_yolo=False)
 
-        # Fallback probe - keep small to avoid spamming the console
-        for idx in range(3):
-            try:
-                # To suppress stdout errors inside OpenCV when failing
-                import os
-                old_stderr = os.dup(2)
-                f = open(os.devnull, 'w')
-                os.dup2(f.fileno(), 2)
-                
-                cap = cv2.VideoCapture(idx)
-                if cap.isOpened() and cap.read()[0]:
-                    cams.append(f"{idx}: Camera {idx}")
-                cap.release()
-                
-                os.dup2(old_stderr, 2)
-                os.close(old_stderr)
-                f.close()
-            except Exception:
-                pass
-        return cams or ["0: Default Camera"]
+            tracked = tracker.update(dets)
+            live = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
+            hw = tracker.confirmed_count
 
-    def _refresh_cameras(self):
-        self._set_status("Scanning cameras …", False)
+            # Annotate frame with ball count
+            disp = proc.copy()
+            cv2.putText(disp, f"Balls: {hw}  (live {live})", (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-        def scan():
-            cams = self._scan_cameras()
-            self.root.after(0, lambda: self._populate_cams(cams))
+            # Pre-encode JPEG once (all streaming clients get same bytes)
+            _, buf = cv2.imencode('.jpg', disp, encode_params)
+            jpg_bytes = buf.tobytes()
 
-        threading.Thread(target=scan, daemon=True).start()
+            with state_lock:
+                if side == "blue":
+                    state["blue_hw"] = max(state["blue_hw"], hw)
+                    state["blue_live"] = live
+                else:
+                    state["red_hw"] = max(state["red_hw"], hw)
+                    state["red_live"] = live
 
-    def _populate_cams(self, cams):
-        choices = ["None (disabled)"] + cams + ["Add URL…"]
-        self.blue_cam_cb["values"] = choices
-        self.red_cam_cb["values"] = choices
-        self.blue_cam_cb.current(0)
-        self.red_cam_cb.current(0)
+            with frame_lock:
+                if side == "blue":
+                    latest_blue_jpg = jpg_bytes
+                else:
+                    latest_red_jpg = jpg_bytes
 
-        # Auto-assign if 2+ cams
-        if len(cams) >= 2:
-            self.blue_cam_cb.current(1)
-            self.red_cam_cb.current(2)
-            self._start_cam("blue", int(cams[0].split(":")[0]))
-            self._start_cam("red",  int(cams[1].split(":")[0]))
-        elif len(cams) == 1:
-            self.blue_cam_cb.current(1)
-            self._start_cam("blue", int(cams[0].split(":")[0]))
+            processed = True
 
-        active = sum(1 for c in [self.blue_cam, self.red_cam] if c.is_open())
-        self._set_status(f"{len(cams)} camera(s) found, {active} active", True)
-
-        # Start the video loop
-        if not hasattr(self, "_loop_active"):
-            self._loop_active = True
-            self._video_loop()
-
-    def _parse_cam_val(self, val):
-        if not val or val.startswith("None"):
-            return None
-        val = val.strip()
-        if ":" in val and val.split(":")[0].strip().isdigit() and "http" not in val:
-            return int(val.split(":")[0])
-        if val.isdigit():
-            return int(val)
-        return val
-
-    def _on_blue_cam(self, _=None):
-        val = self.blue_cam_cb.get()
-        if val == "Add URL…":
-            url = simpledialog.askstring("Camera URL", "Enter URL or path:")
-            if url and url.strip():
-                vals = list(self.blue_cam_cb["values"])
-                if "Add URL…" in vals:
-                    vals.remove("Add URL…")
-                vals.append(url.strip())
-                vals.append("Add URL…")
-                self.blue_cam_cb["values"] = vals
-                self.blue_cam_cb.set(url.strip())
-                val = url.strip()
-            else:
-                self.blue_cam_cb.set("None (disabled)")
-                self.blue_cam.stop()
-                return
-        src = self._parse_cam_val(val)
-        if src is None:
-            self.blue_cam.stop()
-            self.blue_tracker.reset()
+        if processed:
+            dt = time.time() - t0
+            infer_fps = 0.8 * infer_fps + 0.2 * (1.0 / max(dt, 0.001))
+            with state_lock:
+                state["infer_fps"] = round(infer_fps, 1)
         else:
-            self._start_cam("blue", src)
+            time.sleep(0.02)
 
-    def _on_red_cam(self, _=None):
-        val = self.red_cam_cb.get()
-        if val == "Add URL…":
-            url = simpledialog.askstring("Camera URL", "Enter URL or path:")
-            if url and url.strip():
-                vals = list(self.red_cam_cb["values"])
-                if "Add URL…" in vals:
-                    vals.remove("Add URL…")
-                vals.append(url.strip())
-                vals.append("Add URL…")
-                self.red_cam_cb["values"] = vals
-                self.red_cam_cb.set(url.strip())
-                val = url.strip()
-            else:
-                self.red_cam_cb.set("None (disabled)")
-                self.red_cam.stop()
-                return
-        src = self._parse_cam_val(val)
-        if src is None:
-            self.red_cam.stop()
-            self.red_tracker.reset()
-        else:
-            self._start_cam("red", src)
 
-    def _start_cam(self, side, src):
-        cam = self.blue_cam if side == "blue" else self.red_cam
-        tracker = self.blue_tracker if side == "blue" else self.red_tracker
+def timer_loop():
+    """Background thread: decrement timer every second when running."""
+    global _timer_tick_time
+    while True:
+        with state_lock:
+            running = state["timer_running"]
+            started = state["timer_started"]
+            secs = state["timer_seconds"]
+
+        if running and started and secs > 0:
+            now = time.time()
+            if now - _timer_tick_time >= 1.0:
+                _timer_tick_time = now
+                with state_lock:
+                    state["timer_seconds"] = max(0, state["timer_seconds"] - 1)
+                    if state["timer_seconds"] <= 0:
+                        state["timer_running"] = False
+                        state["status"] = "Match ended! Scores are final."
+                        state["status_ok"] = True
+                _audio_cmd("stop")
+                logging.info(f"Timer: {state['timer_seconds']}s remaining")
+        time.sleep(0.05)
+
+
+def _begin_countdown():
+    """Called 3 s after Start to begin the actual countdown."""
+    global _timer_tick_time
+    with state_lock:
+        if not state["timer_running"]:
+            return  # user paused/reset during the 3 s lead-in
+        state["timer_started"] = True
+        state["status"] = "Match started! LIVE counting…"
+        state["status_ok"] = True
+        # Reset trackers and scores for the new match
+        blue_tracker.reset()
+        red_tracker.reset()
+        state["blue_hw"] = 0
+        state["red_hw"] = 0
+        state["blue_live"] = 0
+        state["red_live"] = 0
+        _timer_tick_time = time.time()
+    logging.info("Match countdown started!")
+
+
+def load_yolo():
+    def cb(ok, msg):
+        _set_status(msg, ok)
+    detector.load(callback=cb)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Flask Routes
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/stream/<side>")
+def video_feed(side):
+    if side not in ("blue", "red"):
+        return "Invalid side", 400
+
+    def gen():
+        while True:
+            with frame_lock:
+                jpg = latest_blue_jpg if side == "blue" else latest_red_jpg
+            if jpg is None:
+                jpg = _no_blue_jpg if side == "blue" else _no_red_jpg
+            yield (b"--frame\r\n"
+                   b"Content-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n")
+            time.sleep(0.033)  # cap at ~30 fps for streaming
+
+    return Response(gen(),
+                    mimetype="multipart/x-mixed-replace; boundary=frame",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})
+
+
+@app.route("/events")
+def sse():
+    def gen():
+        while True:
+            with state_lock:
+                data = dict(state)
+            yield f"data: {json.dumps(data)}\n\n"
+            time.sleep(0.1)  # 10 updates/sec
+
+    return Response(gen(),
+                    mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/cameras")
+def api_cameras():
+    cams = scan_cameras()
+    return jsonify(cams)
+
+
+@app.route("/api/camera/<side>", methods=["POST"])
+def api_set_camera(side):
+    if side not in ("blue", "red"):
+        return jsonify({"error": "Invalid side"}), 400
+    data = request.get_json(force=True) or {}
+    src = data.get("src")
+    if src is None:
+        return jsonify({"error": "Missing src"}), 400
+
+    cam = blue_cam if side == "blue" else red_cam
+    tracker = blue_tracker if side == "blue" else red_tracker
+
+    if str(src) == "none":
+        cam.stop()
+        tracker.reset()
+        _set_status(f"{side.upper()} camera disabled", True)
+    else:
+        try:
+            src = int(src)
+        except (ValueError, TypeError):
+            pass
         tracker.reset()
         cam.open(src)
-        self._set_status(f"Loading {side.upper()} camera ({src})...", True)
+        _set_status(f"Opening {side.upper()} camera ({src})…", True)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Live Inference Thread (GPU-accelerated YOLO + HSV)
-    # ══════════════════════════════════════════════════════════════════════
-    def _inference_loop(self):
-        """Background thread: continuously process frames from both cameras."""
-        while self._infer_running:
-            if getattr(self, "analyzing", False):
-                time.sleep(0.05)
-                continue
-            t0 = time.time()
-            processed = False
-            for side, cam, tracker in [
-                ("blue", self.blue_cam, self.blue_tracker),
-                ("red", self.red_cam, self.red_tracker),
-            ]:
-                if not cam.is_open():
-                    continue
-                frame = cam.grab()
-                if frame is None:
-                    continue
-                proc = cv2.resize(frame, (PROCESS_W, PROCESS_H))
-                try:
-                    dets = self.detector.detect(proc, use_yolo=self.detector.ready)
-                except Exception:
-                    dets = self.detector.detect(proc, use_yolo=False)
-                tracked = tracker.update(dets)
-                live = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
-                hw = tracker.confirmed_count
-                with self._result_lock:
-                    if side == "blue":
-                        self._latest_blue = (proc, hw, live)
-                    else:
-                        self._latest_red = (proc, hw, live)
-                processed = True
-            if processed:
-                dt = time.time() - t0
-                self._infer_fps = 0.8 * self._infer_fps + 0.2 * (1.0 / max(dt, 0.001))
-            else:
-                time.sleep(0.02)
+    return jsonify({"ok": True})
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Timer
-    # ══════════════════════════════════════════════════════════════════════
-    def _toggle_timer(self):
-        if not self.timer_running and self.timer_seconds == 150:
-            # Fresh start — play audio, 3 s lead-in
-            self._set_status("Match audio started — timer in 3 s", True)
-            self.audio.play()
-            self.timer_running = True
-            self._timer_started = False
-            self.root.after(3000, self._begin_countdown)
-            return
 
-        if self.timer_running:
-            # PAUSE — stop recording, live counting continues
-            self.timer_running = False
-            self.audio.pause()
-            if self._timer_started:
-                self.blue_cam.stop_recording()
-                self.red_cam.stop_recording()
-                self._set_status("Paused — live counting continues", True)
+@app.route("/api/timer/start", methods=["POST"])
+def api_timer_start():
+    global _timer_tick_time
+    with state_lock:
+        if state["timer_running"]:
+            return jsonify({"ok": True, "msg": "already running"})
+        if state["timer_seconds"] <= 0:
+            return jsonify({"ok": False, "msg": "timer ended — reset first"})
+        fresh = not state["timer_started"]
+        state["timer_running"] = True
+        if fresh:
+            state["status"] = "Audio started — match in 3 s"
         else:
-            self.timer_running = True
-            self._timer_started = True
-            self.audio.resume()
-            # Resume recording (backup)
-            self.blue_cam.start_recording("blue_record.avi")
-            self.red_cam.start_recording("red_record.avi")
-            self._tick()
+            state["timer_started"] = True
+            state["status"] = "Match resumed"
+            _timer_tick_time = time.time()
+        state["status_ok"] = True
 
-    def _begin_countdown(self):
-        if self.timer_running:
-            self._timer_started = True
-            self._set_status("Match started! LIVE counting...", True)
-            self.blue_tracker.reset()
-            self.red_tracker.reset()
-            self.blue_cam.start_recording("blue_record.avi")
-            self.red_cam.start_recording("red_record.avi")
-            self._tick()
+    if fresh:
+        _audio_cmd("play")
+        threading.Timer(3.0, _begin_countdown).start()
+    else:
+        _audio_cmd("resume")
 
-    def _tick(self):
-        if not self.timer_running or not self._timer_started:
-            return
-        if self.timer_seconds > 0:
-            self.timer_seconds -= 1
-            m, s = divmod(self.timer_seconds, 60)
-            colour = "#ff1744" if self.timer_seconds <= 30 else self.ACCENT
-            self.lbl_timer.configure(text=f"{m}:{s:02d}", fg=colour)
-            self.root.after(1000, self._tick)
-        else:
-            self.timer_running = False
-            self.lbl_timer.configure(text="0:00", fg="#ff1744")
-            self.audio.stop()
-            self.blue_cam.stop_recording()
-            self.red_cam.stop_recording()
-            self._set_status("Match ended! Scores are final.", True)
+    return jsonify({"ok": True})
 
-    def _show_progress(self, fraction):
-        """Update the white/black progress bar at the top."""
-        if not self._progress_frame.winfo_ismapped():
-            self._progress_frame.pack(fill=tk.X, side=tk.TOP)
-        self._progress_canvas.update_idletasks()
-        self._progress_canvas.delete("all")
-        w = self._progress_canvas.winfo_width() or 800
-        filled = max(1, int(w * fraction))
-        self._progress_canvas.create_rectangle(0, 0, filled, 8, fill="white", outline="")
 
-    def _hide_progress(self):
-        self._progress_frame.pack_forget()
+@app.route("/api/timer/pause", methods=["POST"])
+def api_timer_pause():
+    with state_lock:
+        if state["timer_running"]:
+            state["timer_running"] = False
+            state["status"] = "Paused — live counting continues"
+            state["status_ok"] = True
+    _audio_cmd("pause")
+    return jsonify({"ok": True})
 
-    def _analyze_all(self):
-        self.analyzing = True
-        self.root.after(0, lambda: self._show_progress(0.0))
-        
-        jobs = []
-        if os.path.exists("blue_record.avi"):
-            jobs.append(("blue_record.avi", self.blue_tracker, "blue"))
-        if os.path.exists("red_record.avi"):
-            jobs.append(("red_record.avi", self.red_tracker, "red"))
-        
-        total_all = 0
-        done_all = [0]
-        for path, _, _ in jobs:
-            cap = cv2.VideoCapture(path)
-            total_all += max(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 1)
-            cap.release()
-        if total_all == 0: total_all = 1
-        
-        for path, tracker, side in jobs:
-            self._analyze_video(path, tracker, side, done_all, total_all)
-        
-        self.analyzing = False
-        self.root.after(0, lambda: (self._hide_progress(), self._set_status("Analysis complete! Ready.", True)))
 
-    def _manual_analyze(self):
-        """Manually trigger analysis of any existing recordings."""
-        if getattr(self, "analyzing", False):
-            self._set_status("Already analyzing...", False)
-            return
-        # Stop any active recording first
-        self.blue_cam.stop_recording()
-        self.red_cam.stop_recording()
-        has_blue = os.path.exists("blue_record.avi")
-        has_red = os.path.exists("red_record.avi")
-        if not has_blue and not has_red:
-            self._set_status("No recordings found. Record a match first.", False)
-            return
-        self._set_status("ANALYZING RECORDINGS...", True)
-        threading.Thread(target=self._analyze_all, daemon=True).start()
+@app.route("/api/timer/reset", methods=["POST"])
+def api_timer_reset():
+    with state_lock:
+        state["timer_running"] = False
+        state["timer_started"] = False
+        state["timer_seconds"] = 150
+        state["status"] = "Timer reset"
+        state["status_ok"] = True
+    _audio_cmd("stop")
+    return jsonify({"ok": True})
 
-    def _analyze_video(self, filepath, tracker, side, done_all, total_all):
-        from concurrent.futures import ThreadPoolExecutor
-        
+
+@app.route("/api/score/adjust", methods=["POST"])
+def api_score_adjust():
+    data = request.get_json(force=True) or {}
+    side = data.get("side")
+    action = data.get("action")
+    if side not in ("blue", "red") or action not in ("plus", "minus", "clear"):
+        return jsonify({"error": "Invalid params"}), 400
+
+    key_hw = f"{side}_hw"
+    key_live = f"{side}_live"
+    with state_lock:
+        if action == "plus":
+            state[key_hw] += 1
+        elif action == "minus":
+            state[key_hw] = max(0, state[key_hw] - 1)
+        elif action == "clear":
+            state[key_hw] = 0
+            state[key_live] = 0
+    if action == "clear":
+        tracker = blue_tracker if side == "blue" else red_tracker
         tracker.reset()
-        cap = cv2.VideoCapture(filepath)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames <= 0: total_frames = 1
-        
-        # Test if YOLO works on this machine; fall back to HSV-only if it crashes
-        can_yolo = False
-        if self.detector.ready:
-            try:
-                test_frame = np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8)
-                self.detector._yolo_detect(test_frame)
-                can_yolo = True
-                logging.info("YOLO available for analysis")
-            except Exception as e:
-                logging.warning(f"YOLO unavailable for analysis ({e}), using HSV-only")
-                can_yolo = False
-        
-        num_workers = max(1, multiprocessing.cpu_count())
-        
-        def _hsv_only_detect(proc_frame):
-            """Run HSV detection on a single frame (thread-safe, no YOLO)."""
-            hsv = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2HSV)
-            dets = []
-            dets += self.detector._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
-            dets += self.detector._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
-            return dets
-        
-        # Read all frames into memory in batches for maximum throughput
-        BATCH = num_workers * 4  # process many frames per batch
-        raw_frames = []
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
-            raw_frames.append(frame)
-        cap.release()
-        
-        total_frames = len(raw_frames) if raw_frames else 1
-        
-        # Process in parallel batches
-        executor = ThreadPoolExecutor(max_workers=num_workers)
-        
-        for batch_start in range(0, len(raw_frames), BATCH):
-            batch = raw_frames[batch_start:batch_start + BATCH]
-            proc_batch = [cv2.resize(f, (PROCESS_W, PROCESS_H)) for f in batch]
-            
-            # Submit HSV detection for all batch frames in parallel
-            futures = [executor.submit(_hsv_only_detect, pf) for pf in proc_batch]
-            hsv_results = [fut.result() for fut in futures]
-            
-            # YOLO must run sequentially (model is not thread-safe)
-            yolo_results = [None] * len(proc_batch)
-            if can_yolo:
-                for i, pf in enumerate(proc_batch):
-                    try:
-                        yolo_results[i] = self.detector._yolo_detect(pf)
-                    except Exception:
-                        can_yolo = False
-                        yolo_results[i] = []
-            
-            # Merge detections and update tracker sequentially (tracker is stateful)
-            for i, pf in enumerate(proc_batch):
-                fno = batch_start + i + 1
-                hsv_dets = hsv_results[i]
-                yol_dets = yolo_results[i] or []
-                
-                # Merge: prefer YOLO, add non-overlapping HSV
-                dets = list(yol_dets)
-                for hd in hsv_dets:
-                    is_dup = False
-                    for yd in yol_dets:
-                        dist = ((yd["x"] - hd["x"]) ** 2 + (yd["y"] - hd["y"]) ** 2) ** 0.5
-                        if dist < max(yd["radius"], hd["radius"]) * 1.5:
-                            is_dup = True
-                            break
-                    if not is_dup:
-                        dets.append(hd)
-                
-                tracked = tracker.update(dets)
-                live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
-                hw = tracker.confirmed_count
-                done_all[0] += 1
-                
-                # Update UI every 5 frames — show the frame being analyzed + progress bar
-                if fno % 5 == 0 or fno == total_frames:
-                    overall_frac = done_all[0] / total_all
-                    def update_ui(h=hw, l=live_count, fr=pf.copy(), frac=overall_frac):
-                        if side == "blue":
-                            self.blue_hw = h
-                            self.blue_live = l
-                        else:
-                            self.red_hw = h
-                            self.red_live = l
-                        self._update_scores()
-                        self._show_progress(frac)
-                        self._show_frame(fr, side)
-                    self.root.after(0, update_ui)
-        
-        executor.shutdown(wait=False)
-        
-        hw = tracker.confirmed_count
-        def finalize(h=hw):
-            if side == "blue":
-                self.blue_hw = h
-                self.blue_live = 0
-            else:
-                self.red_hw = h
-                self.red_live = 0
-            self._update_scores()
-        self.root.after(0, finalize)
 
-    def _reset_timer(self):
-        self.timer_running = False
-        self._timer_started = False
-        self.timer_seconds = 150
-        self.lbl_timer.configure(text="2:30", fg=self.ACCENT)
-        self.audio.stop()
+    return jsonify({"ok": True})
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  Score management
-    # ══════════════════════════════════════════════════════════════════════
-    def _manual_adj(self, side, delta):
-        if side == "blue":
-            self.blue_hw = max(0, self.blue_hw + delta)
-        else:
-            self.red_hw = max(0, self.red_hw + delta)
-        self._update_scores()
 
-    def _clear_blue(self):
-        self.blue_tracker.reset()
-        self.blue_hw = 0
-        self.blue_live = 0
-        self._update_scores()
-        self._set_status("Blue scores cleared", True)
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    with state_lock:
+        state["blue_hw"] = 0
+        state["red_hw"] = 0
+        state["blue_live"] = 0
+        state["red_live"] = 0
+        state["timer_running"] = False
+        state["timer_started"] = False
+        state["timer_seconds"] = 150
+        state["status"] = "All reset"
+        state["status_ok"] = True
+    blue_tracker.reset()
+    red_tracker.reset()
+    _audio_cmd("stop")
+    return jsonify({"ok": True})
 
-    def _clear_red(self):
-        self.red_tracker.reset()
-        self.red_hw = 0
-        self.red_live = 0
-        self._update_scores()
-        self._set_status("Red scores cleared", True)
 
-    def _reset_all(self):
-        self.blue_tracker.reset()
-        self.red_tracker.reset()
-        self.blue_hw = self.red_hw = 0
-        self.blue_live = self.red_live = 0
-        self._reset_timer()
-        self._update_scores()
-        self._set_status("All scores reset", True)
-
-    def _update_scores(self):
-        self.blue_score_lbl.configure(text=str(self.blue_hw))
-        self.blue_info_lbl.configure(
-            text=f"balls scored  |  live: {self.blue_live}")
-        self.red_score_lbl.configure(text=str(self.red_hw))
-        self.red_info_lbl.configure(
-            text=f"balls scored  |  live: {self.red_live}")
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  Video Loop  (processes both cameras each tick)
-    # ══════════════════════════════════════════════════════════════════════
-    def _video_loop(self):
-        t0 = time.time()
-        self._frame_no += 1
-
-        if getattr(self, "analyzing", False):
-            # During offline analysis, let the analyze thread handle UI
-            self.root.after(100, self._video_loop)
-            return
-
-        # ── BLUE ──────────────────────────────────────────────────────
-        with self._result_lock:
-            blue_res = self._latest_blue
-        if blue_res:
-            frame, hw, live = blue_res
-            self.blue_hw = max(self.blue_hw, hw)
-            self.blue_live = live
-            disp = frame.copy()
-            label = f"Balls: {self.blue_hw}  (live {live})"
-            cv2.putText(disp, label, (10, 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            if self.timer_running and self._timer_started:
-                cv2.putText(disp, "LIVE", (PROCESS_W - 70, 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            self._show_frame(disp, "blue")
-        elif self.blue_cam._running:
-            self._show_placeholder(self.blue_canvas, "Loading...")
-        else:
-            self._show_placeholder(self.blue_canvas, "No BLUE camera")
-
-        # ── RED ───────────────────────────────────────────────────────
-        with self._result_lock:
-            red_res = self._latest_red
-        if red_res:
-            frame, hw, live = red_res
-            self.red_hw = max(self.red_hw, hw)
-            self.red_live = live
-            disp = frame.copy()
-            label = f"Balls: {self.red_hw}  (live {live})"
-            cv2.putText(disp, label, (10, 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            if self.timer_running and self._timer_started:
-                cv2.putText(disp, "LIVE", (PROCESS_W - 70, 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            self._show_frame(disp, "red")
-        elif self.red_cam._running:
-            self._show_placeholder(self.red_canvas, "Loading...")
-        else:
-            self._show_placeholder(self.red_canvas, "No RED camera")
-
-        self._update_scores()
-
-        # FPS display (both display refresh rate + inference throughput)
-        dt = time.time() - t0
-        disp_fps = 1.0 / max(dt, 0.001)
-        self._fps = 0.8 * self._fps + 0.2 * disp_fps
-        ifps = self._infer_fps
-        dev_tag = DEVICE.upper()
-        self.fps_lbl.configure(
-            text=f"Display: {self._fps:.0f}  |  Inference: {ifps:.0f} FPS  [{dev_tag}]")
-
-        # Max refresh rate
-        self.root.after(1, self._video_loop)
-
-    def _process_frame(self, frame, tracker, side, use_yolo):
-        """Detect balls, update tracker & counts, draw overlays, display."""
-        dets = self.detector.detect(frame, use_yolo=use_yolo)
-        tracked = tracker.update(dets)
-
-        # Count confirmed balls currently visible
-        live_count = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
-
-        # High-water: total unique balls ever confirmed
-        hw = tracker.confirmed_count
-
-        if side == "blue":
-            self.blue_live = live_count
-            if hw > self.blue_hw:
-                self.blue_hw = hw
-        else:
-            self.red_live = live_count
-            if hw > self.red_hw:
-                self.red_hw = hw
-
-        self._update_scores()
-
-        # Ball count overlay on frame (just the counter, no circles around balls)
-        hw_val = self.blue_hw if side == "blue" else self.red_hw
-        label = f"Balls: {hw_val}  (live {live_count})"
-        cv2.putText(frame, label, (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
-        self._show_frame(frame, side)
-
-    # ── Canvas rendering ─────────────────────────────────────────────────
-    def _show_frame(self, frame, side):
-        canvas = self.blue_canvas if side == "blue" else self.red_canvas
-        try:
-            if not canvas.winfo_exists():
-                return
-            canvas.delete("placeholder")
-            cw = max(canvas.winfo_width(), 320)
-            ch = max(canvas.winfo_height(), 240)
-
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(rgb)
-            scale = min(cw / img.width, ch / img.height)
-            nw = max(1, int(img.width * scale))
-            nh = max(1, int(img.height * scale))
-            img = img.resize((nw, nh), Image.Resampling.BILINEAR)
-            imgtk = ImageTk.PhotoImage(image=img)
-
-            if side == "blue":
-                self._blue_imgtk = imgtk
-                if self._blue_img_id is None:
-                    self._blue_img_id = canvas.create_image(
-                        cw // 2, ch // 2, anchor=tk.CENTER, image=imgtk)
-                else:
-                    canvas.coords(self._blue_img_id, cw // 2, ch // 2)
-                    canvas.itemconfig(self._blue_img_id, image=imgtk)
-            else:
-                self._red_imgtk = imgtk
-                if self._red_img_id is None:
-                    self._red_img_id = canvas.create_image(
-                        cw // 2, ch // 2, anchor=tk.CENTER, image=imgtk)
-                else:
-                    canvas.coords(self._red_img_id, cw // 2, ch // 2)
-                    canvas.itemconfig(self._red_img_id, image=imgtk)
-        except tk.TclError:
-            pass
-
-    def _show_placeholder(self, canvas, text):
-        try:
-            if not canvas.winfo_exists():
-                return
-            cw = max(canvas.winfo_width(), 320)
-            ch = max(canvas.winfo_height(), 240)
-            canvas.delete("placeholder")
-            canvas.create_text(cw // 2, ch // 2, text=text,
-                               fill="gray", font=("Helvetica", 16),
-                               tags="placeholder")
-        except tk.TclError:
-            pass
-
-    # ── Cleanup ──────────────────────────────────────────────────────────
-    def shutdown(self):
-        self._infer_running = False
-        self.blue_cam.stop()
-        self.red_cam.stop()
-        self.audio.stop()
+@app.route("/api/status")
+def api_status():
+    with state_lock:
+        return jsonify(dict(state))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Entry Point
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = GoalScorerApp(root)
-    root.protocol("WM_DELETE_WINDOW", lambda: (app.shutdown(), root.destroy()))
-    root.mainloop()
+    logging.info("Starting DECODE Goal Scorer server on :2016 …")
+
+    # Background threads
+    threading.Thread(target=load_yolo, daemon=True).start()
+    threading.Thread(target=inference_loop, daemon=True).start()
+    threading.Thread(target=timer_loop, daemon=True).start()
+
+    # Auto-detect and open cameras
+    def auto_cameras():
+        time.sleep(1)
+        cams = scan_cameras()
+        logging.info(f"Cameras found: {cams}")
+        if len(cams) >= 2:
+            blue_cam.open(cams[0]["id"])
+            red_cam.open(cams[1]["id"])
+            _set_status(f"{len(cams)} cameras found, 2 active", True)
+        elif len(cams) >= 1:
+            blue_cam.open(cams[0]["id"])
+            _set_status(f"{len(cams)} camera found, 1 active", True)
+        else:
+            _set_status("No cameras found — attach via web UI", False)
+
+    threading.Thread(target=auto_cameras, daemon=True).start()
+
+    app.run(host="0.0.0.0", port=2016, threaded=True, debug=False)

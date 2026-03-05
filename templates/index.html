@@ -1,376 +1,243 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FTC Decode Ball Counter</title>
-    <style>
-        :root {
-            --bg-dark: #0f0f23;
-            --bg-panel: #1a1a2e;
-            --accent-blue: #007acd;
-            --accent-red: #cd0032;
-            --text-light: #e0e0e0;
-            --text-muted: #888888;
-            --border-color: #2a2a40;
-            --button-bg: #2b2b45;
-            --button-hover: #3d3d60;
-            --font-family: 'Segoe UI', Arial, sans-serif;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DECODE Goal Scorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;background:#0f0f23;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
 
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-dark);
-            color: var(--text-light);
-            font-family: var(--font-family);
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
+/* ── Top bar ───────────────────────────────────── */
+.top{display:flex;align-items:center;gap:12px;padding:8px 16px;background:#1a1a2e;border-bottom:1px solid #333;flex-wrap:wrap}
+.top h1{font-size:16px;color:#ffd740;white-space:nowrap}
+.spacer{flex:1}
+.timer{font-size:42px;font-weight:bold;color:#ffd740;font-variant-numeric:tabular-nums;min-width:120px;text-align:center;background:#0f0f23;border:2px groove #555;border-radius:8px;padding:2px 14px;line-height:1.15}
+.timer.danger{color:#ff1744}
+button{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s}
+button:hover{opacity:.85}
+button:active{opacity:.7}
+.b-start{background:#4caf50;color:#fff}
+.b-pause{background:#ff9800;color:#fff}
+.b-reset{background:#616161;color:#fff}
+.b-danger{background:#e53935;color:#fff}
+.b-blue{background:#42a5f5;color:#fff}
+.b-red{background:#ef5350;color:#fff}
+.b-sm{padding:5px 10px;font-size:12px}
 
-        .header {
-            background-color: var(--bg-panel);
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            flex-shrink: 0;
-        }
+/* ── Main panels ───────────────────────────────── */
+.main{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;flex:1;min-height:0}
+.panel{background:#1a1a2e;border-radius:10px;overflow:hidden;border:2px solid #333;display:flex;flex-direction:column}
+.panel.blue{border-color:#42a5f5}
+.panel.red{border-color:#ef5350}
+.panel-hdr{text-align:center;padding:5px;font-weight:bold;font-size:13px;letter-spacing:2px}
+.panel.blue .panel-hdr{background:#42a5f522;color:#42a5f5}
+.panel.red  .panel-hdr{background:#ef535022;color:#ef5350}
+.vid{position:relative;background:#000;flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+.vid img{max-width:100%;max-height:100%;object-fit:contain}
+.score-area{text-align:center;padding:6px 0}
+.score{font-size:64px;font-weight:bold;line-height:1}
+.panel.blue .score{color:#42a5f5}
+.panel.red  .score{color:#ef5350}
+.score-info{font-size:12px;opacity:.65;margin-top:2px}
+.score-btns{display:flex;gap:6px;justify-content:center;padding:6px 0 8px}
 
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-            letter-spacing: 1px;
-            color: #ffffff;
-            font-weight: 600;
-        }
+/* ── Camera controls ───────────────────────────── */
+.cam-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#151528;border-top:1px solid #222;font-size:12px;flex-wrap:wrap}
+.cam-bar label{font-weight:600}
+.cam-bar select{padding:3px 6px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#e0e0e0;font-size:12px}
 
-        .status-container {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
+/* ── Status bar ────────────────────────────────── */
+.status-bar{display:flex;align-items:center;gap:8px;padding:5px 16px;background:#1a1a2e;border-top:1px solid #333;font-size:11px}
+.dot{width:9px;height:9px;border-radius:50%;background:gray;flex-shrink:0}
+.dot.ok{background:#4caf50}
+.dot.err{background:#e53935}
+.status-txt{flex:1;color:gray}
+.fps-txt{color:gray;white-space:nowrap}
 
-        .status-msg {
-            font-size: 14px;
-            color: #27ae60;
-        }
-        .status-msg.error { color: #e74c3c; }
-
-        .timer-display {
-            font-size: 28px;
-            font-weight: bold;
-            font-family: monospace;
-            color: #f1c40f;
-            background: #000;
-            padding: 5px 15px;
-            border-radius: 5px;
-            border: 1px solid #333;
-            min-width: 80px;
-            text-align: center;
-        }
-
-        .main-content {
-            display: flex;
-            flex: 1;
-            padding: 20px;
-            gap: 20px;
-            overflow: hidden;
-        }
-
-        .side-panel {
-            flex: 1;
-            background-color: var(--bg-panel);
-            border: 2px solid var(--border-color);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .side-panel.blue { border-color: var(--accent-blue); }
-        .side-panel.red { border-color: var(--accent-red); }
-
-        .panel-header {
-            padding: 10px 15px;
-            font-size: 20px;
-            font-weight: bold;
-            text-transform: uppercase;
-            text-align: center;
-            color: white;
-        }
-        .side-panel.blue .panel-header { background-color: var(--accent-blue); }
-        .side-panel.red .panel-header { background-color: var(--accent-red); }
-
-        .controls {
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .select-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .select-group select {
-            flex: 1;
-            background: var(--button-bg);
-            color: var(--text-light);
-            border: 1px solid var(--border-color);
-            padding: 8px;
-            border-radius: 5px;
-            font-size: 14px;
-            outline: none;
-        }
-        .select-group select:focus { border-color: var(--text-muted); }
-
-        .video-container {
-            flex: 1;
-            background-color: #000;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            border-bottom: 1px solid var(--border-color);
-            min-height: 240px;
-        }
-        .video-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-
-        .scoring-section {
-            padding: 20px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            flex-shrink: 0;
-            background-color: var(--bg-panel);
-        }
-
-        .score-display {
-            font-size: 64px;
-            font-weight: bold;
-            font-family: monospace;
-            margin: 0;
-            line-height: 1;
-        }
-        .side-panel.blue .score-display { color: var(--accent-blue); }
-        .side-panel.red .score-display { color: var(--accent-red); }
-
-        .live-count {
-            font-size: 14px;
-            color: var(--text-muted);
-        }
-
-        .button-row {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        button {
-            background-color: var(--button-bg);
-            color: var(--text-light);
-            border: 1px solid var(--border-color);
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
-            transition: all 0.2s;
-        }
-        button:hover {
-            background-color: var(--button-hover);
-        }
-        button:active {
-            transform: scale(0.98);
-        }
-        button.danger { color: #ff6b6b; border-color: #552222; }
-        button.danger:hover { background-color: #441111; }
-        button.primary { background-color: #27ae60; color: white; border-color: #2ecc71; }
-        button.primary:hover { background-color: #2ecc71; }
-
-        .footer {
-            background-color: var(--bg-panel);
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 1px solid var(--border-color);
-            flex-shrink: 0;
-            font-size: 13px;
-            color: var(--text-muted);
-        }
-    </style>
+@media(max-width:700px){
+  .main{grid-template-columns:1fr}
+  .timer{font-size:32px;min-width:90px}
+}
+</style>
 </head>
 <body>
 
-    <div class="header">
-        <h1>FTC DECODE SCORE</h1>
-        <div class="status-container">
-            <span id="statusMsg" class="status-msg">Loading...</span>
-            <div id="timerDisplay" class="timer-display">2:30</div>
-            <button onclick="postAction('toggle_timer')" class="primary">Play/Pause</button>
-            <button onclick="postAction('reset_timer')">Reset Timer</button>
-            <button onclick="postAction('reset_all')" class="danger">Reset Match</button>
-            <button onclick="postAction('refresh_cams')">Scan Cams</button>
-        </div>
+<!-- Top bar -->
+<div class="top">
+  <h1>DECODE Goal Scorer</h1>
+  <div class="spacer"></div>
+  <div class="timer" id="timer">2:30</div>
+  <button class="b-start" id="btnStart" onclick="timerStart()">Start</button>
+  <button class="b-pause" onclick="timerPause()">Pause</button>
+  <button class="b-reset b-sm" onclick="timerReset()">Reset Timer</button>
+  <button class="b-danger b-sm" onclick="resetAll()">Reset All</button>
+</div>
+
+<!-- Main area -->
+<div class="main">
+  <!-- Blue -->
+  <div class="panel blue">
+    <div class="panel-hdr">BLUE GOAL</div>
+    <div class="vid"><img id="blueStream" src="/stream/blue" alt="Blue"></div>
+    <div class="score-area">
+      <div class="score" id="blueScore">0</div>
+      <div class="score-info" id="blueInfo">balls scored &nbsp;|&nbsp; live: 0</div>
     </div>
-
-    <div class="main-content">
-        <!-- BLUE PANEL -->
-        <div class="side-panel blue">
-            <div class="panel-header">BLUE ALLIANCE</div>
-            <div class="controls">
-                <div class="select-group">
-                    <label>Camera:</label>
-                    <select id="blueCamSelect" onchange="postAction('set_cam', 'blue', this.value)">
-                        <option value="">Loading...</option>
-                    </select>
-                </div>
-            </div>
-            <div class="video-container">
-                <img src="/video_feed/blue" id="blueVid" alt="No Blue Camera Feed">
-            </div>
-            <div class="scoring-section">
-                <div id="blueScore" class="score-display">0</div>
-                <div id="blueLive" class="live-count">Live View in Frame: 0</div>
-                <div class="button-row">
-                    <button onclick="postAction('manual_add', 'blue')">+1 Score</button>
-                    <button onclick="postAction('manual_sub', 'blue')">-1 Score</button>
-                    <button class="danger" onclick="postAction('clear_side', 'blue')">Clear</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- RED PANEL -->
-        <div class="side-panel red">
-            <div class="panel-header">RED ALLIANCE</div>
-            <div class="controls">
-                <div class="select-group">
-                    <label>Camera:</label>
-                    <select id="redCamSelect" onchange="postAction('set_cam', 'red', this.value)">
-                        <option value="">Loading...</option>
-                    </select>
-                </div>
-            </div>
-            <div class="video-container">
-                <img src="/video_feed/red" id="redVid" alt="No Red Camera Feed">
-            </div>
-            <div class="scoring-section">
-                <div id="redScore" class="score-display">0</div>
-                <div id="redLive" class="live-count">Live View in Frame: 0</div>
-                <div class="button-row">
-                    <button onclick="postAction('manual_add', 'red')">+1 Score</button>
-                    <button onclick="postAction('manual_sub', 'red')">-1 Score</button>
-                    <button class="danger" onclick="postAction('clear_side', 'red')">Clear</button>
-                </div>
-            </div>
-        </div>
+    <div class="score-btns">
+      <button class="b-blue b-sm" onclick="adj('blue','plus')">+1</button>
+      <button class="b-blue b-sm" onclick="adj('blue','minus')">-1</button>
+      <button class="b-reset b-sm" onclick="adj('blue','clear')">Clear</button>
     </div>
-
-    <div class="footer">
-        <span>AI Scoring System (YOLOv8 + HSV Centroid Tracking) Flask backend</span>
-        <span id="fpsDisplay">FPS: 0.0</span>
+  </div>
+  <!-- Red -->
+  <div class="panel red">
+    <div class="panel-hdr">RED GOAL</div>
+    <div class="vid"><img id="redStream" src="/stream/red" alt="Red"></div>
+    <div class="score-area">
+      <div class="score" id="redScore">0</div>
+      <div class="score-info" id="redInfo">balls scored &nbsp;|&nbsp; live: 0</div>
     </div>
+    <div class="score-btns">
+      <button class="b-red b-sm" onclick="adj('red','plus')">+1</button>
+      <button class="b-red b-sm" onclick="adj('red','minus')">-1</button>
+      <button class="b-reset b-sm" onclick="adj('red','clear')">Clear</button>
+    </div>
+  </div>
+</div>
 
-    <script>
-        let availableCameras = [];
-        let pollingInterval = null;
+<!-- Camera selector -->
+<div class="cam-bar">
+  <label style="color:#42a5f5">Blue Cam:</label>
+  <select id="blueCam" onchange="setCam('blue')"><option value="none">None</option></select>
+  <label style="color:#ef5350;margin-left:12px">Red Cam:</label>
+  <select id="redCam" onchange="setCam('red')"><option value="none">None</option></select>
+  <button class="b-reset b-sm" onclick="refreshCams()">Refresh Cameras</button>
+</div>
 
-        function formatTime(seconds) {
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            return `${m}:${s.toString().padStart(2, '0')}`;
-        }
+<!-- Status -->
+<div class="status-bar">
+  <div class="dot" id="dot"></div>
+  <span class="status-txt" id="statusTxt">Connecting…</span>
+  <span class="fps-txt" id="fpsTxt"></span>
+</div>
 
-        async function fetchState() {
-            try {
-                const res = await fetch('/api/state');
-                const data = await res.json();
-                
-                // Update text
-                document.getElementById('blueScore').innerText = data.blue_hw;
-                document.getElementById('redScore').innerText = data.red_hw;
-                document.getElementById('blueLive').innerText = `Live View in Frame: ${data.blue_live}`;
-                document.getElementById('redLive').innerText = `Live View in Frame: ${data.red_live}`;
-                document.getElementById('timerDisplay').innerText = formatTime(data.timer_seconds);
-                document.getElementById('fpsDisplay').innerText = `FPS: ${data.fps.toFixed(1)}`;
-                
-                const statusEl = document.getElementById('statusMsg');
-                statusEl.innerText = data.status_msg;
-                statusEl.className = data.status_ok ? 'status-msg' : 'status-msg error';
+<!-- Hidden audio for FTC timer (plays on CLIENT) -->
+<audio id="timerAudio" preload="auto">
+  <source src="/static/ftctimer.mp3" type="audio/mpeg">
+</audio>
 
-                // Check for camera refresh needed
-                if (JSON.stringify(availableCameras) !== JSON.stringify(data.cameras)) {
-                    availableCameras = data.cameras;
-                    
-                    const updateSelect = (id, curVal) => {
-                        const sel = document.getElementById(id);
-                        sel.innerHTML = '';
-                        let found = false;
-                        for (let c of availableCameras) {
-                            const opt = document.createElement('option');
-                            opt.value = c;
-                            opt.innerText = c;
-                            if (c === curVal) {
-                                opt.selected = true;
-                                found = true;
-                            }
-                            sel.appendChild(opt);
-                        }
-                        if (!found && curVal && availableCameras.length > 0) {
-                             sel.value = availableCameras[0];
-                        }
-                    };
-                    updateSelect('blueCamSelect', data.blue_cam_val);
-                    updateSelect('redCamSelect', data.red_cam_val);
-                } else {
-                    // Only update selection if the element is NOT focused, to avoid fighting user input
-                    const bd = document.getElementById('blueCamSelect');
-                    if (document.activeElement !== bd && bd.value !== data.blue_cam_val && data.blue_cam_val) {
-                         bd.value = data.blue_cam_val;
-                    }
-                    const rd = document.getElementById('redCamSelect');
-                    if (document.activeElement !== rd && rd.value !== data.red_cam_val && data.red_cam_val) {
-                         rd.value = data.red_cam_val;
-                    }
-                }
+<script>
+const audio = document.getElementById('timerAudio');
+let lastAudioSeq = 0;
+let audioUnlocked = false;
 
-            } catch (err) {
-                console.error("Failed to fetch state", err);
-            }
-        }
+/* ── SSE: real-time state from server ─────────── */
+const es = new EventSource('/events');
+es.onmessage = function(e) {
+  const d = JSON.parse(e.data);
 
-        async function postAction(action, side=null, val=null) {
-            try {
-                await fetch('/api/action', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action, side, val })
-                });
-                fetchState(); // Immediate UI update
-            } catch (err) {
-                console.error("Failed to post action", err);
-            }
-        }
+  // Scores
+  document.getElementById('blueScore').textContent = d.blue_hw;
+  document.getElementById('redScore').textContent  = d.red_hw;
+  document.getElementById('blueInfo').innerHTML =
+    'balls scored &nbsp;|&nbsp; live: ' + d.blue_live;
+  document.getElementById('redInfo').innerHTML =
+    'balls scored &nbsp;|&nbsp; live: ' + d.red_live;
 
-        // Poll state repeatedly to be extremely responsive
-        pollingInterval = setInterval(fetchState, 150);
-        
-        // Initial manual poll
-        fetchState();
-    </script>
+  // Timer
+  const m = Math.floor(d.timer_seconds / 60);
+  const s = d.timer_seconds % 60;
+  const tEl = document.getElementById('timer');
+  tEl.textContent = m + ':' + String(s).padStart(2, '0');
+  tEl.classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
+
+  // Status
+  const dot = document.getElementById('dot');
+  dot.className = 'dot ' + (d.status_ok ? 'ok' : 'err');
+  document.getElementById('statusTxt').textContent = d.status;
+  document.getElementById('fpsTxt').textContent =
+    'Inference: ' + d.infer_fps + ' FPS  [' + d.device.toUpperCase() + ']';
+
+  // Audio commands (sequence-based so we never double-fire)
+  if (d.audio_seq > lastAudioSeq) {
+    lastAudioSeq = d.audio_seq;
+    handleAudio(d.audio_cmd);
+  }
+};
+es.onerror = function() {
+  document.getElementById('dot').className = 'dot err';
+  document.getElementById('statusTxt').textContent = 'Connection lost — retrying…';
+};
+
+/* ── Audio management ─────────────────────────── */
+function handleAudio(cmd) {
+  if (!cmd) return;
+  switch (cmd) {
+    case 'play':  audio.currentTime = 0; audio.play().catch(()=>{}); break;
+    case 'pause': audio.pause(); break;
+    case 'resume': audio.play().catch(()=>{}); break;
+    case 'stop':  audio.pause(); audio.currentTime = 0; break;
+  }
+}
+
+/* Unlock audio on first user gesture (browser autoplay policy) */
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const p = audio.play();
+  if (p) p.then(()=>{ audio.pause(); audio.currentTime=0; audioUnlocked=true; }).catch(()=>{});
+}
+
+/* ── API helpers ──────────────────────────────── */
+function post(url, body) {
+  unlockAudio();
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {})
+  });
+}
+
+function timerStart() { post('/api/timer/start'); }
+function timerPause() { post('/api/timer/pause'); }
+function timerReset() { post('/api/timer/reset'); }
+function resetAll()   { post('/api/reset'); }
+function adj(side, action) { post('/api/score/adjust', {side, action}); }
+
+function setCam(side) {
+  const sel = document.getElementById(side==='blue'?'blueCam':'redCam');
+  post('/api/camera/' + side, {src: sel.value});
+}
+
+function refreshCams() {
+  fetch('/api/cameras').then(r=>r.json()).then(cams => {
+    ['blue','red'].forEach(side => {
+      const sel = document.getElementById(side==='blue'?'blueCam':'redCam');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="none">None</option>';
+      cams.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.name;
+        sel.appendChild(o);
+      });
+      // Try to restore previous selection
+      if ([...sel.options].some(o => o.value == cur)) sel.value = cur;
+    });
+  });
+}
+
+/* Reconnect MJPEG streams on error */
+function monitorStream(id, url) {
+  const img = document.getElementById(id);
+  img.onerror = function() {
+    setTimeout(()=>{ img.src = url + '?t=' + Date.now(); }, 2000);
+  };
+}
+monitorStream('blueStream', '/stream/blue');
+monitorStream('redStream',  '/stream/red');
+
+// Load camera list on page load
+refreshCams();
+</script>
 </body>
 </html>
