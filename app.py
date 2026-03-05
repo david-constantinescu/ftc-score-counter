@@ -199,19 +199,29 @@ class CameraThread:
     def _loop(self, src):
         s = int(src) if isinstance(src, str) and str(src).isdigit() else src
 
+        # On Linux, /dev/videoN paths need V4L2 backend with the integer index
+        # for fast open. Extract the index from the path.
+        v4l2_idx = None
+        if sys.platform == "linux" and isinstance(s, str) and s.startswith("/dev/video"):
+            try:
+                v4l2_idx = int(s.replace("/dev/video", ""))
+            except ValueError:
+                pass
+
         def connect():
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
-            elif sys.platform == "linux" and isinstance(s, int):
-                c = cv2.VideoCapture(s, cv2.CAP_V4L2)
+            elif sys.platform == "linux" and (isinstance(s, int) or v4l2_idx is not None):
+                idx = v4l2_idx if v4l2_idx is not None else s
+                c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
             else:
-                # /dev/videoN paths or other sources — let OpenCV pick backend
                 c = cv2.VideoCapture(s)
             return c if c.isOpened() else None
 
         self.cap = connect()
         if self.cap:
             self.is_ready = True
+            logging.info(f"Camera {src} opened successfully")
 
         fails = 0
         while self._running:
@@ -564,6 +574,13 @@ def inference_loop():
             infer_fps = 0.8 * infer_fps + 0.2 * (1.0 / max(dt, 0.001))
             with state_lock:
                 state["infer_fps"] = round(infer_fps, 1)
+                # Update status to show active cameras
+                cams_active = []
+                if blue_cam.is_open(): cams_active.append("Blue")
+                if red_cam.is_open(): cams_active.append("Red")
+                if cams_active:
+                    state["status"] = f"Running — {', '.join(cams_active)} cam{'s' if len(cams_active)>1 else ''} active"
+                    state["status_ok"] = True
         else:
             time.sleep(0.02)
 
@@ -691,7 +708,7 @@ def api_set_camera(side):
             pass
         tracker.reset()
         cam.open(src)
-        _set_status(f"Opening {side.upper()} camera ({src})…", True)
+        _set_status(f"Opening {side.upper()} camera\u2026", True)
 
     return jsonify({"ok": True})
 
