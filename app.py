@@ -25,7 +25,9 @@ from collections import OrderedDict
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
 # Set limits to maximize CPU usage
 os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
-os.environ["OPENBLAS_CORETYPE"] = "ARMV8"
+# Disable NNPACK to avoid "unsupported hardware" crash on older CPUs (like older Intel models)
+os.environ["USE_NNPACK"] = "0"
+
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -946,7 +948,12 @@ class GoalScorerApp:
 
         self._update_scores()
 
-        # Drawing removed to get rid of yellow overlays and speed up processing
+        # Ball count overlay on frame (just the counter, no circles around balls)
+        hw_val = self.blue_hw if side == "blue" else self.red_hw
+        label = f"Balls: {hw_val}  (live {live_count})"
+        cv2.putText(frame, label, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
         self._show_frame(frame, side)
 
     # ── Canvas rendering ─────────────────────────────────────────────────
