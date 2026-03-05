@@ -64,6 +64,22 @@ torch.set_num_threads(multiprocessing.cpu_count())
 cv2.setUseOptimized(True)
 cv2.setNumThreads(multiprocessing.cpu_count())
 
+# ── GPU acceleration (Apple Silicon MPS / NVIDIA CUDA) ────────────────────────
+def _detect_device():
+    if torch.cuda.is_available():
+        name = torch.cuda.get_device_name(0)
+        logging.info(f"CUDA GPU detected: {name}")
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        logging.info("Apple Silicon GPU detected (MPS)")
+        return "mps"
+    logging.info("No GPU detected — using CPU")
+    return "cpu"
+
+DEVICE = _detect_device()
+USE_HALF = DEVICE in ("cuda", "mps")
+logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 # HSV colour ranges for purple and green foam balls
 # Broadened the ranges again to make sure both Green and Purple balls are easily picked up in any lighting
@@ -310,15 +326,19 @@ class BallDetector:
             model_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
             self.yolo = YOLO(model_path)
-            # warm-up run
+            # Move model to best available device (CUDA / MPS / CPU)
+            self.yolo.to(DEVICE)
+            # Warm up on target device with FP16 if GPU
             self.yolo.predict(
-                np.zeros((480, 640, 3), dtype=np.uint8),
+                np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8),
                 verbose=False, conf=YOLO_CONF,
+                device=DEVICE,
+                half=USE_HALF,
             )
             self.ready = True
-            logging.info("YOLOv8n loaded and warmed up")
+            logging.info(f"YOLOv8n loaded on {DEVICE}" + (" (FP16)" if USE_HALF else ""))
             if callback:
-                callback(True, "YOLOv8n ready")
+                callback(True, f"YOLOv8n ready [{DEVICE.upper()}]")
         except Exception as e:
             logging.error(f"YOLOv8 load error: {e}")
             self.ready = False
@@ -332,7 +352,9 @@ class BallDetector:
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
             classes=[YOLO_BALL_CLASS],
-            imgsz=384, # Must be multiple of 32
+            imgsz=384,
+            device=DEVICE,
+            half=USE_HALF,
         )
         out = []
         for r in results:
@@ -496,12 +518,18 @@ class GoalScorerApp:
 
         self.audio = AudioPlayer()
 
-        # Frame counter for YOLO scheduling
+        # Frame counter
         self._frame_no = 0
-        self._yolo_every = 3    # run YOLO every N frames
 
         # FPS
         self._fps = 0.0
+        self._infer_fps = 0.0
+
+        # Live inference results (written by inference thread, read by UI)
+        self._latest_blue = None   # (frame, hw, live_count)
+        self._latest_red = None
+        self._result_lock = threading.Lock()
+        self._infer_running = True
 
         # Tk image references (prevent GC)
         self._blue_imgtk = None
@@ -510,8 +538,11 @@ class GoalScorerApp:
         self._build_ui()
 
         # Load YOLO in background
-        self._set_status("Loading YOLOv8 …", False)
+        self._set_status(f"Loading YOLOv8 on {DEVICE.upper()} …", False)
         threading.Thread(target=self._load_yolo, daemon=True).start()
+
+        # Start background inference thread (processes both cameras live)
+        threading.Thread(target=self._inference_loop, daemon=True).start()
 
         # Scan cameras after UI is shown
         self.root.after(400, self._refresh_cameras)
@@ -836,6 +867,46 @@ class GoalScorerApp:
         self._set_status(f"Loading {side.upper()} camera ({src})...", True)
 
     # ══════════════════════════════════════════════════════════════════════
+    #  Live Inference Thread (GPU-accelerated YOLO + HSV)
+    # ══════════════════════════════════════════════════════════════════════
+    def _inference_loop(self):
+        """Background thread: continuously process frames from both cameras."""
+        while self._infer_running:
+            if getattr(self, "analyzing", False):
+                time.sleep(0.05)
+                continue
+            t0 = time.time()
+            processed = False
+            for side, cam, tracker in [
+                ("blue", self.blue_cam, self.blue_tracker),
+                ("red", self.red_cam, self.red_tracker),
+            ]:
+                if not cam.is_open():
+                    continue
+                frame = cam.grab()
+                if frame is None:
+                    continue
+                proc = cv2.resize(frame, (PROCESS_W, PROCESS_H))
+                try:
+                    dets = self.detector.detect(proc, use_yolo=self.detector.ready)
+                except Exception:
+                    dets = self.detector.detect(proc, use_yolo=False)
+                tracked = tracker.update(dets)
+                live = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
+                hw = tracker.confirmed_count
+                with self._result_lock:
+                    if side == "blue":
+                        self._latest_blue = (proc, hw, live)
+                    else:
+                        self._latest_red = (proc, hw, live)
+                processed = True
+            if processed:
+                dt = time.time() - t0
+                self._infer_fps = 0.8 * self._infer_fps + 0.2 * (1.0 / max(dt, 0.001))
+            else:
+                time.sleep(0.02)
+
+    # ══════════════════════════════════════════════════════════════════════
     #  Timer
     # ══════════════════════════════════════════════════════════════════════
     def _toggle_timer(self):
@@ -849,19 +920,18 @@ class GoalScorerApp:
             return
 
         if self.timer_running:
-            # PAUSE — stop recording and trigger analysis immediately
+            # PAUSE — stop recording, live counting continues
             self.timer_running = False
             self.audio.pause()
             if self._timer_started:
                 self.blue_cam.stop_recording()
                 self.red_cam.stop_recording()
-                self._set_status("Recording stopped. ANALYZING...", True)
-                threading.Thread(target=self._analyze_all, daemon=True).start()
+                self._set_status("Paused — live counting continues", True)
         else:
             self.timer_running = True
             self._timer_started = True
             self.audio.resume()
-            # Resume recording
+            # Resume recording (backup)
             self.blue_cam.start_recording("blue_record.avi")
             self.red_cam.start_recording("red_record.avi")
             self._tick()
@@ -869,7 +939,7 @@ class GoalScorerApp:
     def _begin_countdown(self):
         if self.timer_running:
             self._timer_started = True
-            self._set_status("Match started! RECORDING...", True)
+            self._set_status("Match started! LIVE counting...", True)
             self.blue_tracker.reset()
             self.red_tracker.reset()
             self.blue_cam.start_recording("blue_record.avi")
@@ -891,8 +961,7 @@ class GoalScorerApp:
             self.audio.stop()
             self.blue_cam.stop_recording()
             self.red_cam.stop_recording()
-            self._set_status("Match ended! ANALYZING RECORDING...", True)
-            threading.Thread(target=self._analyze_all, daemon=True).start()
+            self._set_status("Match ended! Scores are final.", True)
 
     def _show_progress(self, fraction):
         """Update the white/black progress bar at the top."""
@@ -1117,39 +1186,62 @@ class GoalScorerApp:
         self._frame_no += 1
 
         if getattr(self, "analyzing", False):
-            # Do nothing while analyzing, let the analyze loop handle the UI updates
+            # During offline analysis, let the analyze thread handle UI
             self.root.after(100, self._video_loop)
             return
 
-        # Process BLUE
-        if self.blue_cam.is_open():
-            frame = self.blue_cam.grab()
-            if frame is not None:
-                # Just draw the raw live frame (no heavy YOLO during recording)
-                if self.timer_running and self._timer_started:
-                    cv2.putText(frame, "RECORDING...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                self._show_frame(frame, "blue")
+        # ── BLUE ──────────────────────────────────────────────────────
+        with self._result_lock:
+            blue_res = self._latest_blue
+        if blue_res:
+            frame, hw, live = blue_res
+            self.blue_hw = max(self.blue_hw, hw)
+            self.blue_live = live
+            disp = frame.copy()
+            label = f"Balls: {self.blue_hw}  (live {live})"
+            cv2.putText(disp, label, (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            if self.timer_running and self._timer_started:
+                cv2.putText(disp, "LIVE", (PROCESS_W - 70, 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            self._show_frame(disp, "blue")
+        elif self.blue_cam._running:
+            self._show_placeholder(self.blue_canvas, "Loading...")
         else:
-            msg = "Loading..." if self.blue_cam._running else "No BLUE camera"
-            self._show_placeholder(self.blue_canvas, msg)
+            self._show_placeholder(self.blue_canvas, "No BLUE camera")
 
-        # Process RED
-        if self.red_cam.is_open():
-            frame = self.red_cam.grab()
-            if frame is not None:
-                if self.timer_running and self._timer_started:
-                    cv2.putText(frame, "RECORDING...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                self._show_frame(frame, "red")
+        # ── RED ───────────────────────────────────────────────────────
+        with self._result_lock:
+            red_res = self._latest_red
+        if red_res:
+            frame, hw, live = red_res
+            self.red_hw = max(self.red_hw, hw)
+            self.red_live = live
+            disp = frame.copy()
+            label = f"Balls: {self.red_hw}  (live {live})"
+            cv2.putText(disp, label, (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            if self.timer_running and self._timer_started:
+                cv2.putText(disp, "LIVE", (PROCESS_W - 70, 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            self._show_frame(disp, "red")
+        elif self.red_cam._running:
+            self._show_placeholder(self.red_canvas, "Loading...")
         else:
-            msg = "Loading..." if self.red_cam._running else "No RED camera"
-            self._show_placeholder(self.red_canvas, msg)
+            self._show_placeholder(self.red_canvas, "No RED camera")
 
-        # FPS
+        self._update_scores()
+
+        # FPS display (both display refresh rate + inference throughput)
         dt = time.time() - t0
-        self._fps = 0.8 * self._fps + 0.2 * (1.0 / max(dt, 0.001))
-        self.fps_lbl.configure(text=f"FPS: {self._fps:.0f}")
+        disp_fps = 1.0 / max(dt, 0.001)
+        self._fps = 0.8 * self._fps + 0.2 * disp_fps
+        ifps = self._infer_fps
+        dev_tag = DEVICE.upper()
+        self.fps_lbl.configure(
+            text=f"Display: {self._fps:.0f}  |  Inference: {ifps:.0f} FPS  [{dev_tag}]")
 
-        # ALWAYS execute instantly for absolute max possible framerate
+        # Max refresh rate
         self.root.after(1, self._video_loop)
 
     def _process_frame(self, frame, tracker, side, use_yolo):
@@ -1234,6 +1326,7 @@ class GoalScorerApp:
 
     # ── Cleanup ──────────────────────────────────────────────────────────
     def shutdown(self):
+        self._infer_running = False
         self.blue_cam.stop()
         self.red_cam.stop()
         self.audio.stop()
