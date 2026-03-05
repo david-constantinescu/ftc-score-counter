@@ -199,8 +199,7 @@ class CameraThread:
     def _loop(self, src):
         s = int(src) if isinstance(src, str) and str(src).isdigit() else src
 
-        # On Linux, /dev/videoN paths need V4L2 backend with the integer index
-        # for fast open. Extract the index from the path.
+        # On Linux, extract video index from /dev/videoN paths for V4L2
         v4l2_idx = None
         if sys.platform == "linux" and isinstance(s, str) and s.startswith("/dev/video"):
             try:
@@ -211,12 +210,21 @@ class CameraThread:
         def connect():
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
-            elif sys.platform == "linux" and (isinstance(s, int) or v4l2_idx is not None):
-                idx = v4l2_idx if v4l2_idx is not None else s
-                c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+            elif sys.platform == "linux" and v4l2_idx is not None:
+                c = cv2.VideoCapture(v4l2_idx, cv2.CAP_V4L2)
+            elif sys.platform == "linux" and isinstance(s, int):
+                c = cv2.VideoCapture(s, cv2.CAP_V4L2)
             else:
                 c = cv2.VideoCapture(s)
-            return c if c.isOpened() else None
+            if not c.isOpened():
+                return None
+            # Force MJPEG format to avoid USB bandwidth exhaustion
+            if sys.platform == "linux":
+                c.set(cv2.CAP_PROP_FOURCC,
+                      cv2.VideoWriter.fourcc(*"MJPG"))
+            c.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            return c
 
         self.cap = connect()
         if self.cap:
