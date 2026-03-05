@@ -202,7 +202,8 @@ class CameraThread:
         def connect():
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
-            elif sys.platform == "linux" and isinstance(s, int):
+            elif sys.platform == "linux":
+                # Accept both /dev/videoN paths and integer indices
                 c = cv2.VideoCapture(s, cv2.CAP_V4L2)
             else:
                 c = cv2.VideoCapture(s)
