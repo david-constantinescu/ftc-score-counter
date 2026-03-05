@@ -54,31 +54,28 @@ from ultralytics import YOLO
 # ── Constants ─────────────────────────────────────────────────────────────────
 # HSV colour ranges for purple and green foam balls
 # Broadened the ranges again to make sure both Green and Purple balls are easily picked up in any lighting
-# TIGHTENED color ranges to resist shadows (increased Sat/Val limits, stricter Hue)
-# Balls must be BRIGHT and CLEAR (V >= 130) to avoid any dark shadows or wooden corners
-PURPLE_LOW  = np.array([125, 80, 100])
-PURPLE_HIGH = np.array([155, 255, 255])
-GREEN_LOW   = np.array([45,  100, 130])
-GREEN_HIGH  = np.array([80,  255, 255])
+# WIDENED color ranges heavily but raised Saturation/Value slightly to avoid pitch black/grey shadows
+PURPLE_LOW  = np.array([105, 50, 50])
+PURPLE_HIGH = np.array([165, 255, 255])
+GREEN_LOW   = np.array([35,  50, 50])
+GREEN_HIGH  = np.array([85,  255, 255])
 
-# "Placed just above the corner of the goal" means balls fall through fast, 
-# but making minimum size much bigger to avoid tiny false positive blurs.
-PROCESS_W, PROCESS_H = 160, 120   # ABSOLUTE MAX SPEED processing resolution
+# Absolute maximum speed middleground resolution (multiple of 32 for YOLO safety)
+PROCESS_W, PROCESS_H = 256, 192   # high speed but big enough to catch shape
 
 # YOLO sports-ball class in COCO = 32
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.25 # Lowered to catch blurred balls
+YOLO_CONF       = 0.35 # Slightly higher to prevent random false positive boxes
 
-# ── Dynamic Sizing for Lower Res ──────────────────────────────────────────────
-# We divided resolution by 2, so area divides by 4, radius divides by 2
-# Re-adjusted constraints for ultra-small 160x120 resolution
-MIN_BALL_AREA   = 50      # tiny speck filter 
-MAX_BALL_AREA   = 19000   # entire screen
-MIN_RADIUS      = 4
-MAX_RADIUS      = 80      
+# ── Dynamic Sizing ──────────────────────────────────────────────
+# Re-adjusted constraints for 256x192 resolution
+MIN_BALL_AREA   = 100      # tiny speck filter 
+MAX_BALL_AREA   = 45000    # entire screen
+MIN_RADIUS      = 5
+MAX_RADIUS      = 120      
 KERN_SIZE       = (5, 5)
 MIN_CIRCULARITY = 0.0     
-CONFIRM_FRAMES  = 1        # Instant trigger
+CONFIRM_FRAMES  = 4        # Needs to be visible for at least 4 frames
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Centroid Tracker
@@ -86,9 +83,10 @@ CONFIRM_FRAMES  = 1        # Instant trigger
 class CentroidTracker:
     """Lightweight multi-object tracker by centroid distance."""
 
-    # Balls pass very quickly so max_disappeared should be very low so it doesn't "remember"
-    # a ball that already left and mistakenly assign its ID to the next ball entering.
-    def __init__(self, max_disappeared=5, max_dist=120):
+    # Balls pass very quickly so max_disappeared should be incredibly low.
+    # We want it to quickly completely forget a ball if it vanishes, 
+    # so a new ball entering the frame shortly after creates a NEW count.
+    def __init__(self, max_disappeared=30, max_dist=120):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -200,6 +198,7 @@ class CameraThread:
                 c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 c.set(cv2.CAP_PROP_FRAME_WIDTH, PROCESS_W)
                 c.set(cv2.CAP_PROP_FRAME_HEIGHT, PROCESS_H)
+                c.set(cv2.CAP_PROP_FPS, 120)  # Request ultra-high FPS from hardware 
                 return c
             return None
 
@@ -293,7 +292,7 @@ class BallDetector:
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
             classes=[YOLO_BALL_CLASS],
-            imgsz=160, # ABSOLUTE MAX SPEED: compute at hyper low res
+            imgsz=256, # Must be multiple of 32
         )
         out = []
         for r in results:
@@ -320,6 +319,11 @@ class BallDetector:
         kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern, iterations=1)
+        
+        # Erode the mask to literally create "spaces" between touching balls 
+        # so they count as distinct objects instead of one giant blob
+        mask = cv2.erode(mask, kern, iterations=2)
+        
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         out = []
         for cnt in contours:
@@ -878,9 +882,8 @@ class GoalScorerApp:
         t0 = time.time()
         self._frame_no += 1
         
-        # Use YOLO heavily spaced out to parse clustered balls if needed
-        # We run it every 2 frames to inject the "sports ball" logic into the blob detection
-        use_yolo = self.detector.ready and (self._frame_no % 2 == 0)
+        # Run YOLO every frame for absolute maximum processing, size is so small it should easily keep up
+        use_yolo = self.detector.ready 
 
         # Process BLUE
         if self.blue_cam.is_open():
@@ -932,25 +935,7 @@ class GoalScorerApp:
 
         self._update_scores()
 
-        # Draw overlays
-        for oid, obj in tracked.items():
-            x, y = obj.get("x", 0), obj.get("y", 0)
-            r = max(obj.get("radius", 16), 10)
-            confirmed = oid in tracker.ever_confirmed
-            colour = (0, 255, 0) if confirmed else (0, 180, 255)
-            thickness = 3 if confirmed else 1
-            cv2.circle(frame, (x, y), r, colour, thickness)
-            if confirmed:
-                cv2.putText(frame, str(oid), (x - 8, y + 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                            (255, 255, 255), 1)
-
-        # Ball count overlay on frame
-        hw_val = self.blue_hw if side == "blue" else self.red_hw
-        label = f"Balls: {hw_val}  (live {live_count})"
-        cv2.putText(frame, label, (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
+        # Drawing removed to get rid of yellow overlays and speed up processing
         self._show_frame(frame, side)
 
     # ── Canvas rendering ─────────────────────────────────────────────────
