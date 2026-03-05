@@ -404,6 +404,37 @@ def _audio_cmd(cmd):
 
 
 # ── Camera scanning ──────────────────────────────────────────────────────────
+import glob as _glob
+
+def _linux_v4l2_cameras():
+    """Enumerate V4L2 capture devices on Linux with real names."""
+    cams = []
+    devs = sorted(_glob.glob("/dev/video*"))
+    for dev in devs:
+        idx_str = dev.replace("/dev/video", "")
+        if not idx_str.isdigit():
+            continue
+        # Read the human name from sysfs
+        name_path = f"/sys/class/video4linux/video{idx_str}/name"
+        try:
+            with open(name_path) as f:
+                hw_name = f.read().strip()
+        except Exception:
+            hw_name = f"Camera {idx_str}"
+        # Check device is a capture device (not metadata) by attempting a read
+        try:
+            cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+            if cap.isOpened():
+                ret, _ = cap.read()
+                cap.release()
+                if ret:
+                    cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
+            else:
+                cap.release()
+        except Exception:
+            pass
+    return cams
+
 def scan_cameras():
     cams = []
     if sys.platform == "darwin":
@@ -414,21 +445,25 @@ def scan_cameras():
             if p.returncode == 0:
                 items = json.loads(p.stdout).get("SPCameraDataType", [])
                 for i, item in enumerate(items):
-                    cams.append({"id": i, "name": f"{i}: {item.get('_name', f'Camera {i}')}"})
+                    cams.append({"id": i, "name": f"{item.get('_name', f'Camera {i}')} (index {i})"})
                 if cams:
                     return cams
         except Exception:
             pass
-    # Probe by index (works on Linux / Windows too)
+    elif sys.platform == "linux":
+        cams = _linux_v4l2_cameras()
+        if cams:
+            return cams
+    # Fallback: probe by index (Windows or if above failed)
     for idx in range(8):
         try:
             cap = cv2.VideoCapture(idx)
             if cap.isOpened() and cap.read()[0]:
-                cams.append({"id": idx, "name": f"{idx}: Camera {idx}"})
+                cams.append({"id": idx, "name": f"Camera {idx} (index {idx})"})
             cap.release()
         except Exception:
             pass
-    return cams or [{"id": 0, "name": "0: Default Camera"}]
+    return cams or [{"id": 0, "name": "Default Camera (index 0)"}]
 
 
 # ── Placeholder frame ────────────────────────────────────────────────────────
