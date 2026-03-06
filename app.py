@@ -225,14 +225,25 @@ class CameraThread:
             with camera_connect_lock:
                 c = None
                 
+                params = []
+                if sys.platform == "linux":
+                    params = [
+                        cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"),
+                        cv2.CAP_PROP_FRAME_WIDTH, 640,
+                        cv2.CAP_PROP_FRAME_HEIGHT, 480,
+                        cv2.CAP_PROP_BUFFERSIZE, 1
+                    ]
+
                 if sys.platform == "darwin" and isinstance(s, int):
                     c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
                 elif sys.platform == "linux":
                     # Try V4L2 with integer index first (fastest)
                     idx = v4l2_idx if v4l2_idx is not None else (s if isinstance(s, int) else None)
                     if idx is not None:
-                        c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+                        c = cv2.VideoCapture(idx, cv2.CAP_V4L2, params)
                         if c.isOpened():
+                            # We still configure after because depending on OpenCV version
+                            # params might not stick.
                             _configure(c)
                             # Verify we can actually read; webcams often drop first few frames
                             for _ in range(5):
@@ -242,7 +253,7 @@ class CameraThread:
                                 time.sleep(0.1)
                         if c is not None:
                             c.release()
-                    # Fallback: string path with default backend
+                    # Fallback: string path with default backend (do NOT pass params here)
                     path = s if isinstance(s, str) else f"/dev/video{s}"
                     c = cv2.VideoCapture(path)
                     if c.isOpened():
