@@ -89,10 +89,10 @@ PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 YOLO_BALL_CLASS = 32
 YOLO_CONF       = 0.35
 
-MIN_BALL_AREA   = 800
-MAX_BALL_AREA   = 80000
-MIN_RADIUS      = 15
-MAX_RADIUS      = 150
+MIN_BALL_AREA   = 350
+MAX_BALL_AREA   = 100000
+MIN_RADIUS      = 10
+MAX_RADIUS      = 200
 KERN_SIZE       = (11, 11)
 CONFIRM_FRAMES  = 2
 
@@ -103,7 +103,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=45, max_dist=75):
+    def __init__(self, max_disappeared=7, max_dist=250):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -428,7 +428,8 @@ class BallDetector:
             for yd in yol_dets:
                 dist = ((yd["x"] - hd["x"]) ** 2 +
                         (yd["y"] - hd["y"]) ** 2) ** 0.5
-                if dist < max(yd["radius"], hd["radius"]) * 1.5:
+                # Greatly increase deduplication range to merge blurred YOLO + HSV hits into single valid ball
+                if dist < max(yd["radius"], hd["radius"]) * 2.5 or dist < 65:
                     is_dup = True
                     break
             if not is_dup:
