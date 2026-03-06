@@ -22,6 +22,7 @@ from collections import OrderedDict
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
 os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
 os.environ["USE_NNPACK"] = "0"
+os.environ["OPENCV_VIDEOIO_PRIORITY_LIST"] = "V4L2,FFMPEG,AVFOUNDATION,MSMF"
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.basicConfig(
