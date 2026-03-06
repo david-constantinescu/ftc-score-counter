@@ -315,6 +315,9 @@ class CameraThread:
 
     def stop(self):
         self._running = False
+        if self._thread is not None and self._thread is not threading.current_thread():
+            self._thread.join(timeout=2.0)
+            self._thread = None
         with self.lock:
             self.frame = None
 
