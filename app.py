@@ -230,8 +230,7 @@ class CameraThread:
                     params = [
                         cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"),
                         cv2.CAP_PROP_FRAME_WIDTH, 640,
-                        cv2.CAP_PROP_FRAME_HEIGHT, 480,
-                        cv2.CAP_PROP_BUFFERSIZE, 1
+                        cv2.CAP_PROP_FRAME_HEIGHT, 480
                     ]
 
                 if sys.platform == "darwin" and isinstance(s, int):
