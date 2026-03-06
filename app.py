@@ -80,22 +80,23 @@ logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 # Motion blur mixes object color with background, lowering saturation & value.
-PURPLE_LOW  = np.array([110, 130, 110])
-PURPLE_HIGH = np.array([165, 255, 255])
-GREEN_LOW   = np.array([35,  130, 110])
-GREEN_HIGH  = np.array([90,  255, 255])
+# Keep hue ranges tight to avoid picking up the blue field (hue ~100-120) or red field (hue ~0-10, 160-179)
+PURPLE_LOW  = np.array([135, 120, 110])
+PURPLE_HIGH = np.array([160, 255, 255])
+GREEN_LOW   = np.array([45,  120, 110])
+GREEN_HIGH  = np.array([85,  255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.75
+YOLO_CONF       = 0.35
 
-MIN_BALL_AREA   = 1200
-MAX_BALL_AREA   = 25000
-MIN_RADIUS      = 22
+MIN_BALL_AREA   = 350
+MAX_BALL_AREA   = 100000
+MIN_RADIUS      = 10
 MAX_RADIUS      = 200
 KERN_SIZE       = (11, 11)
-CONFIRM_FRAMES  = 4
+CONFIRM_FRAMES  = 2
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -104,7 +105,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=15, max_dist=120):
+    def __init__(self, max_disappeared=7, max_dist=250):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -633,8 +634,6 @@ def inference_loop():
                 r = int(d.get("radius", 10))
                 color = (0, 255, 0) if d.get("src") == "hsv" else (255, 0, 255)
                 cv2.circle(disp, (int(d["x"]), int(d["y"])), r, color, 2)
-            cv2.putText(disp, f"Balls: {hw}  (live {live})", (10, 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             # Pre-encode JPEG once (all streaming clients get same bytes)
             _, buf = cv2.imencode('.jpg', disp, encode_params)
