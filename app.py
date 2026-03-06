@@ -99,11 +99,11 @@ PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 YOLO_BALL_CLASS = 32
 YOLO_CONF       = 0.35
 
-MIN_BALL_AREA   = 400
+MIN_BALL_AREA   = 300
 MAX_BALL_AREA   = 80000
-MIN_RADIUS      = 15
+MIN_RADIUS      = 12
 MAX_RADIUS      = 150
-KERN_SIZE       = (11, 11)
+KERN_SIZE       = (7, 7)
 CONFIRM_FRAMES  = 2
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
@@ -456,12 +456,13 @@ class BallDetector:
                 out.append({"x": cx, "y": cy, "radius": radius, "src": "yolo"})
         return out
 
-    def _hsv_detect(self, hsv, low, high):
+    def _hsv_detect(self, hsv, low, high, erode_iter=1):
         mask = cv2.inRange(hsv, low, high)
         kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern, iterations=1)
-        mask = cv2.erode(mask, kern, iterations=1)
+        if erode_iter > 0:
+            mask = cv2.erode(mask, kern, iterations=erode_iter)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
         out = []
@@ -480,19 +481,22 @@ class BallDetector:
         hsv_dets = []
         if not skip_hsv:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
-            hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
-        dets = list(yol_dets)
-        for hd in hsv_dets:
+            hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH, erode_iter=1)
+            hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH, erode_iter=0)
+        # Merge all detections, then do full pairwise dedup
+        all_raw = yol_dets + hsv_dets
+        all_raw.sort(key=lambda d: d["radius"], reverse=True)
+        dets = []
+        for d in all_raw:
             is_dup = False
-            for yd in yol_dets:
-                dist = ((yd["x"] - hd["x"]) ** 2 +
-                        (yd["y"] - hd["y"]) ** 2) ** 0.5
-                if dist < max(yd["radius"], hd["radius"]) * 1.5:
+            for fd in dets:
+                dist = ((d["x"] - fd["x"]) ** 2 +
+                        (d["y"] - fd["y"]) ** 2) ** 0.5
+                if dist < max(d["radius"], fd["radius"]) * 1.5:
                     is_dup = True
                     break
             if not is_dup:
-                dets.append(hd)
+                dets.append(d)
         return dets
 
 
