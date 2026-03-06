@@ -80,18 +80,18 @@ logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 # Motion blur mixes object color with background, lowering saturation & value.
-PURPLE_LOW  = np.array([105, 120, 100])
+PURPLE_LOW  = np.array([110, 130, 110])
 PURPLE_HIGH = np.array([165, 255, 255])
-GREEN_LOW   = np.array([35,  120, 100])
+GREEN_LOW   = np.array([35,  130, 110])
 GREEN_HIGH  = np.array([90,  255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.55
+YOLO_CONF       = 0.65
 
-MIN_BALL_AREA   = 800
-MAX_BALL_AREA   = 100000
+MIN_BALL_AREA   = 1200
+MAX_BALL_AREA   = 25000
 MIN_RADIUS      = 10
 MAX_RADIUS      = 200
 KERN_SIZE       = (11, 11)
