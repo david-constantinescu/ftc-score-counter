@@ -76,10 +76,10 @@ USE_HALF = DEVICE in ("cuda",)  # MPS half is flaky on some models; CUDA only
 logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-PURPLE_LOW  = np.array([105, 50, 50])
-PURPLE_HIGH = np.array([165, 255, 255])
-GREEN_LOW   = np.array([35,  50, 50])
-GREEN_HIGH  = np.array([85,  255, 255])
+PURPLE_LOW  = np.array([115, 90, 90])
+PURPLE_HIGH = np.array([155, 255, 255])
+GREEN_LOW   = np.array([40,  90, 90])
+GREEN_HIGH  = np.array([80,  255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
@@ -91,7 +91,7 @@ MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 7
 MAX_RADIUS      = 150
 KERN_SIZE       = (5, 5)
-CONFIRM_FRAMES  = 4
+CONFIRM_FRAMES  = 12
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -100,7 +100,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=30, max_dist=120):
+    def __init__(self, max_disappeared=60, max_dist=180):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
