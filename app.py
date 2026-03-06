@@ -105,7 +105,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=5, max_dist=75):
+    def __init__(self, max_disappeared=3, max_dist=200):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
