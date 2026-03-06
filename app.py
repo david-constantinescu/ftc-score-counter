@@ -17,6 +17,7 @@ import threading
 import multiprocessing
 import time
 import json
+import queue
 from collections import OrderedDict
 
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
@@ -51,6 +52,8 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import torch
+torch.set_num_threads(multiprocessing.cpu_count())
+
 from flask import (Flask, Response, jsonify, request,
                    render_template, send_from_directory)
 
@@ -91,7 +94,7 @@ MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 7
 MAX_RADIUS      = 150
 KERN_SIZE       = (5, 5)
-CONFIRM_FRAMES  = 12
+CONFIRM_FRAMES  = 3
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -100,7 +103,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=60, max_dist=180):
+    def __init__(self, max_disappeared=5, max_dist=80):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -186,6 +189,7 @@ class CameraThread:
         self.cap = None
         self.src = None
         self.frame = None
+        self.frame_queue = queue.Queue(maxsize=300)
         self.lock = threading.Lock()
         self._running = False
         self._thread = None
@@ -291,6 +295,14 @@ class CameraThread:
             if ret:
                 with self.lock:
                     self.frame = frame
+                try:
+                    self.frame_queue.put_nowait(frame)
+                except queue.Full:
+                    try:
+                        self.frame_queue.get_nowait()
+                        self.frame_queue.put_nowait(frame)
+                    except queue.Empty:
+                        pass
                 fails = 0
             else:
                 fails += 1
@@ -307,8 +319,11 @@ class CameraThread:
         self.is_ready = False
 
     def grab(self):
-        with self.lock:
-            return self.frame.copy() if self.frame is not None else None
+        try:
+            return self.frame_queue.get_nowait()
+        except queue.Empty:
+            with self.lock:
+                return self.frame.copy() if self.frame is not None else None
 
     def is_open(self):
         return self.is_ready and self._running
@@ -320,6 +335,9 @@ class CameraThread:
             self._thread = None
         with self.lock:
             self.frame = None
+        while not self.frame_queue.empty():
+            try: self.frame_queue.get_nowait()
+            except queue.Empty: pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -609,6 +627,10 @@ def inference_loop():
 
             # Annotate frame with ball count
             disp = proc.copy()
+            for d in dets:
+                r = int(d.get("radius", 10))
+                color = (0, 255, 0) if d.get("src") == "hsv" else (255, 0, 255)
+                cv2.circle(disp, (int(d["x"]), int(d["y"])), r, color, 2)
             cv2.putText(disp, f"Balls: {hw}  (live {live})", (10, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
