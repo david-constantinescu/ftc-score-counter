@@ -492,7 +492,7 @@ class BallDetector:
             for fd in dets:
                 dist = ((d["x"] - fd["x"]) ** 2 +
                         (d["y"] - fd["y"]) ** 2) ** 0.5
-                if dist < max(d["radius"], fd["radius"]) * 1.5:
+                if dist < max(d["radius"], fd["radius"]) * 1.85:
                     is_dup = True
                     break
             if not is_dup:
