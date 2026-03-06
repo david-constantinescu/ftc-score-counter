@@ -244,7 +244,12 @@ class CameraThread:
                     c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
                 elif sys.platform == "linux":
                     path = s if isinstance(s, str) else f"/dev/video{s}"
-                    c = cv2.VideoCapture(path)
+                    # Try to use CAP_V4L2 with params to avoid initial uncompressed YUYV USB bandwidth overload
+                    try:
+                        c = cv2.VideoCapture(path, cv2.CAP_V4L2, params)
+                    except:
+                        c = cv2.VideoCapture(path, cv2.CAP_V4L2)
+                        
                     if c.isOpened():
                         _configure(c)
                         # Verify we can actually read; webcams often drop first few frames
