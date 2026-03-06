@@ -451,7 +451,7 @@ class BallDetector:
             return []
         results = self.yolo.predict(
             frame, verbose=False, conf=YOLO_CONF,
-            classes=[YOLO_BALL_CLASS],
+            classes=[YOLO_BALL_CLASS], iou=0.45,
             imgsz=384, device=DEVICE, half=USE_HALF,
         )
         out = []
