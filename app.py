@@ -624,7 +624,13 @@ def _linux_v4l2_cameras():
         cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
     return cams
 
+_cam_cache = {"ts": 0, "data": []}
+_CAM_CACHE_TTL = 5  # seconds
+
 def scan_cameras():
+    now = time.monotonic()
+    if _cam_cache["data"] and (now - _cam_cache["ts"]) < _CAM_CACHE_TTL:
+        return _cam_cache["data"]
     cams = []
     
     # Check for RealSense devices (like T265)
@@ -656,7 +662,7 @@ def scan_cameras():
         except Exception:
             pass
     elif sys.platform == "linux":
-        cams = _linux_v4l2_cameras()
+        cams.extend(_linux_v4l2_cameras())
         if cams:
             return cams
     # Fallback: probe by index (Windows or if above failed)
@@ -668,7 +674,10 @@ def scan_cameras():
             cap.release()
         except Exception:
             pass
-    return cams or [{"id": 0, "name": "Default Camera (index 0)"}]
+    result = cams or [{"id": 0, "name": "Default Camera (index 0)"}]
+    _cam_cache["ts"] = time.monotonic()
+    _cam_cache["data"] = result
+    return result
 
 
 # ── Placeholder frame ────────────────────────────────────────────────────────

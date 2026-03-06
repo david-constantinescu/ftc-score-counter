@@ -45,7 +45,9 @@ button:active{opacity:.7}
 /* ── Camera controls ───────────────────────────── */
 .cam-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#151528;border-top:1px solid #222;font-size:12px;flex-wrap:wrap}
 .cam-bar label{font-weight:600}
-.cam-bar select{padding:3px 6px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#e0e0e0;font-size:12px}
+.cam-bar select{padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#e0e0e0;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:border-color .15s}
+.cam-bar select:focus{border-color:#42a5f5;outline:none}
+.cam-bar select:disabled{opacity:.5;cursor:wait}
 
 /* ── Status bar ────────────────────────────────── */
 .status-bar{display:flex;align-items:center;gap:8px;padding:5px 16px;background:#1a1a2e;border-top:1px solid #333;font-size:11px}
@@ -215,20 +217,25 @@ function setCam(side) {
 }
 
 function refreshCams() {
+  const blueS = document.getElementById('blueCam');
+  const redS = document.getElementById('redCam');
+  blueS.disabled = true; redS.disabled = true;
   fetch('/api/cameras').then(r=>r.json()).then(cams => {
     ['blue','red'].forEach(side => {
-      const sel = document.getElementById(side==='blue'?'blueCam':'redCam');
+      const sel = side==='blue' ? blueS : redS;
       const cur = sel.value;
       sel.innerHTML = '<option value="none">None</option>';
       cams.forEach(c => {
         const o = document.createElement('option');
-        o.value = c.id; o.textContent = c.name;
+        o.value = c.id;
+        o.textContent = c.name.length > 35 ? c.name.slice(0,32) + '…' : c.name;
+        o.title = c.name;
         sel.appendChild(o);
       });
-      // Try to restore previous selection
       if ([...sel.options].some(o => o.value == cur)) sel.value = cur;
+      sel.disabled = false;
     });
-  });
+  }).catch(() => { blueS.disabled = false; redS.disabled = false; });
 }
 
 /* Reconnect MJPEG streams on error */
