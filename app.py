@@ -150,6 +150,14 @@ class CentroidTracker:
         dpos = np.array([[d["x"], d["y"]] for d in dets])
         D = np.linalg.norm(opos[:, None] - dpos[None, :], axis=2)
 
+        # Heavily penalize linking a new detection to a ghost if the new detection
+        # is physically higher (y is smaller) by more than 50 pixels. Balls fall downward.
+        # This prevents consecutive balls from merging their IDs.
+        for r in range(len(opos)):
+            for c in range(len(dpos)):
+                if dpos[c, 1] < opos[r, 1] - 50:
+                    D[r, c] += 9999.0
+
         used_r, used_c = set(), set()
         for flat_idx in np.argsort(D, axis=None):
             r, c = divmod(int(flat_idx), D.shape[1])
@@ -485,17 +493,21 @@ class BallDetector:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
             hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
-        dets = list(yol_dets)
-        for hd in hsv_dets:
+            
+        all_dets = yol_dets + hsv_dets
+        all_dets.sort(key=lambda d: d["radius"], reverse=True)
+        
+        dets = []
+        for d in all_dets:
             is_dup = False
-            for yd in yol_dets:
-                dist = ((yd["x"] - hd["x"]) ** 2 +
-                        (yd["y"] - hd["y"]) ** 2) ** 0.5
-                if dist < max(yd["radius"], hd["radius"]) * 1.5:
+            for fd in dets:
+                dist = ((d["x"] - fd["x"]) ** 2 + (d["y"] - fd["y"]) ** 2) ** 0.5
+                if dist < max(d["radius"], fd["radius"]) * 1.5:
                     is_dup = True
                     break
             if not is_dup:
-                dets.append(hd)
+                dets.append(d)
+                
         return dets
 
 
