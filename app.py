@@ -257,7 +257,7 @@ class CameraThread:
                     # Try V4L2 with integer index first (fastest)
                     idx = v4l2_idx if v4l2_idx is not None else (s if isinstance(s, int) else None)
                     if idx is not None:
-                        c = cv2.VideoCapture(idx, cv2.CAP_V4L2, params)
+                        c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
                         if c.isOpened():
                             # We still configure after because depending on OpenCV version
                             # params might not stick.
