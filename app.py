@@ -103,7 +103,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=15, max_dist=150):
+    def __init__(self, max_disappeared=45, max_dist=75):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -189,7 +189,7 @@ class CameraThread:
         self.cap = None
         self.src = None
         self.frame = None
-        self.frame_queue = queue.Queue(maxsize=300)
+        self.frame_queue = queue.Queue(maxsize=30)
         self.lock = threading.Lock()
         self._running = False
         self._thread = None
