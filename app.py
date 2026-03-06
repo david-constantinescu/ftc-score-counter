@@ -88,7 +88,7 @@ GREEN_HIGH  = np.array([90,  255, 255])
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.60
+YOLO_CONF       = 0.75
 
 MIN_BALL_AREA   = 1200
 MAX_BALL_AREA   = 25000
