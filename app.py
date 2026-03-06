@@ -104,7 +104,7 @@ MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 4
 MAX_RADIUS      = 250
 KERN_SIZE       = (5, 5)
-CONFIRM_FRAMES  = 2
+CONFIRM_FRAMES  = 1
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -113,7 +113,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=3, max_dist=150):
+    def __init__(self, max_disappeared=3, max_dist=250):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -489,10 +489,11 @@ class BallDetector:
 
     def _hsv_detect(self, hsv, low, high):
         mask = cv2.inRange(hsv, low, high)
-        kern_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         kern_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern_open, iterations=1)
+        kern_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        # Ensure fast blurry shapes are connected before stripping noise
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern_close, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern_open, iterations=1)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
         out = []
@@ -752,8 +753,6 @@ def inference_loop():
                 r = int(d.get("radius", 10))
                 color = (0, 255, 0) if d.get("src") == "hsv" else (255, 0, 255)
                 cv2.circle(disp, (int(d["x"]), int(d["y"])), r, color, 2)
-            cv2.putText(disp, f"Balls: {hw}  (live {live})", (10, 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             # Pre-encode JPEG once (all streaming clients get same bytes)
             _, buf = cv2.imencode('.jpg', disp, encode_params)
