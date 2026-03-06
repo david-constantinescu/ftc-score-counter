@@ -90,8 +90,9 @@ logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 # ── Constants ─────────────────────────────────────────────────────────────────
 PURPLE_LOW  = np.array([115, 90, 90])
 PURPLE_HIGH = np.array([155, 255, 255])
-GREEN_LOW   = np.array([40,  90, 90])
-GREEN_HIGH  = np.array([80,  255, 255])
+# Lower saturation & value for green to catch extreme motion blur fading
+GREEN_LOW   = np.array([35,  40, 40])
+GREEN_HIGH  = np.array([85,  255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
@@ -112,7 +113,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=15, max_dist=150):
+    def __init__(self, max_disappeared=15, max_dist=200):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
