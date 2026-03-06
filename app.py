@@ -38,7 +38,6 @@ def _install_deps():
         "numpy": "numpy",
         "ultralytics": "ultralytics",
         "flask": "flask",
-        "pyrealsense2": "pyrealsense2",
     }
     missing = [p for p, m in pkgs.items() if importlib.util.find_spec(m) is None]
     if missing:
@@ -53,13 +52,6 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import torch
-
-try:
-    import pyrealsense2 as rs
-    RS_AVAILABLE = True
-except ImportError:
-    RS_AVAILABLE = False
-    logging.warning("pyrealsense2 not installed. RealSense cameras not available.")
 
 torch.set_num_threads(multiprocessing.cpu_count())
 
@@ -390,7 +382,7 @@ class CameraThread:
     def stop(self):
         self._running = False
         if self._thread is not None and self._thread is not threading.current_thread():
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=0.1)
             self._thread = None
         with self.lock:
             self.frame = None
@@ -621,21 +613,6 @@ def scan_cameras():
     if _cam_cache["data"] and (now - _cam_cache["ts"]) < _CAM_CACHE_TTL:
         return _cam_cache["data"]
     cams = []
-    
-    # Check for RealSense devices (like T265)
-    if RS_AVAILABLE:
-        try:
-            ctx = rs.context()
-            for dev in ctx.query_devices():
-                name = dev.get_info(rs.camera_info.name)
-                serial = dev.get_info(rs.camera_info.serial_number)
-                if "T265" in name:
-                    cams.append({"id": f"rs:{serial}:1", "name": f"{name} (Fisheye 1) [{serial}]"})
-                    cams.append({"id": f"rs:{serial}:2", "name": f"{name} (Fisheye 2) [{serial}]"})
-                else:
-                    cams.append({"id": f"rs:{serial}", "name": f"{name} [{serial}]"})
-        except Exception as e:
-            logging.error(f"RealSense scan error: {e}")
 
     if sys.platform == "darwin":
         try:
@@ -996,20 +973,16 @@ if __name__ == "__main__":
     threading.Thread(target=inference_loop, daemon=True).start()
     threading.Thread(target=timer_loop, daemon=True).start()
 
-    # Auto-detect and open cameras
+    # Preload first two cameras instantly for faster startup preview
+    blue_cam.open(0)
+    red_cam.open(1)
+    _set_status("Preloading cameras...", True)
+
+    # Auto-detect cameras in the background to populate UI dropdowns fully
     def auto_cameras():
-        time.sleep(1)
         cams = scan_cameras()
         logging.info(f"Cameras found: {cams}")
-        if len(cams) >= 2:
-            blue_cam.open(cams[0]["id"])
-            red_cam.open(cams[1]["id"])
-            _set_status(f"{len(cams)} cameras found, 2 active", True)
-        elif len(cams) >= 1:
-            blue_cam.open(cams[0]["id"])
-            _set_status(f"{len(cams)} camera found, 1 active", True)
-        else:
-            _set_status("No cameras found — attach via web UI", False)
+        _set_status(f"Cameras ready: {len(cams)} found", True)
 
     threading.Thread(target=auto_cameras, daemon=True).start()
 
