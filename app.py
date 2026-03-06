@@ -38,6 +38,7 @@ def _install_deps():
         "numpy": "numpy",
         "ultralytics": "ultralytics",
         "flask": "flask",
+        "pyrealsense2": "pyrealsense2",
     }
     missing = [p for p, m in pkgs.items() if importlib.util.find_spec(m) is None]
     if missing:
@@ -52,6 +53,14 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import torch
+
+try:
+    import pyrealsense2 as rs
+    RS_AVAILABLE = True
+except ImportError:
+    RS_AVAILABLE = False
+    logging.warning("pyrealsense2 not installed. RealSense cameras not available.")
+
 torch.set_num_threads(multiprocessing.cpu_count())
 
 from flask import (Flask, Response, jsonify, request,
@@ -103,7 +112,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=45, max_dist=75):
+    def __init__(self, max_disappeared=15, max_dist=150):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -189,7 +198,7 @@ class CameraThread:
         self.cap = None
         self.src = None
         self.frame = None
-        self.frame_queue = queue.Queue(maxsize=30)
+        self.frame_queue = queue.Queue(maxsize=300)
         self.lock = threading.Lock()
         self._running = False
         self._thread = None
@@ -206,6 +215,10 @@ class CameraThread:
         return True
 
     def _loop(self, src):
+        if str(src).startswith("rs:") and RS_AVAILABLE:
+            self._loop_realsense(str(src))
+            return
+
         s = int(src) if isinstance(src, str) and str(src).isdigit() else src
 
         # On Linux, extract video index from /dev/videoN paths for V4L2
@@ -325,6 +338,66 @@ class CameraThread:
             with self.lock:
                 return self.frame.copy() if self.frame is not None else None
 
+    def _loop_realsense(self, src):
+        parts = src.split(":")
+        serial = parts[1]
+        stream_idx = int(parts[2]) if len(parts) > 2 else None
+
+        pipeline = rs.pipeline()
+        config = rs.config()
+        config.enable_device(serial)
+
+        if stream_idx is not None:
+            # T265 Fisheye
+            config.enable_stream(rs.stream.fisheye, stream_idx, rs.format.y8, 30)
+            config.enable_stream(rs.stream.pose)
+        else:
+            config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+        try:
+            pipeline.start(config)
+            self.is_ready = True
+            logging.info(f"RealSense camera {src} opened successfully")
+            while self._running:
+                frames = pipeline.wait_for_frames()
+                _frame = None
+
+                if stream_idx is not None:
+                    f = frames.get_fisheye_frame(stream_idx)
+                    pose = frames.get_pose_frame()
+                    if f:
+                        img = np.asanyarray(f.get_data())
+                        # Convert 8-bit grayscale to BGR so YOLO can process it
+                        img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                        if pose:
+                            data = pose.get_pose_data()
+                            tx, ty, tz = data.translation.x, data.translation.y, data.translation.z
+                            vx, vy, vz = data.velocity.x, data.velocity.y, data.velocity.z
+                            # Add small text to show we are using all T265 features
+                            cv2.putText(img_bgr, f"Pose X: {tx:.2f} m/s", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                            cv2.putText(img_bgr, f"Vel: {vx:.2f}, {vy:.2f}, {vz:.2f}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                        _frame = img_bgr
+                else:
+                    c_frame = frames.get_color_frame()
+                    if c_frame:
+                        _frame = np.asanyarray(c_frame.get_data())
+
+                if _frame is not None:
+                    with self.lock:
+                        self.frame = _frame
+                    try: self.frame_queue.put_nowait(_frame.copy())
+                    except queue.Full:
+                        try:
+                            self.frame_queue.get_nowait()
+                            self.frame_queue.put_nowait(_frame.copy())
+                        except queue.Empty: pass
+        except Exception as e:
+            logging.error(f"RealSense error for {src}: {e}")
+            self.is_ready = False
+        finally:
+            try: pipeline.stop()
+            except: pass
+
     def is_open(self):
         return self.is_ready and self._running
 
@@ -414,14 +487,15 @@ class BallDetector:
             out.append({"x": int(cx), "y": int(cy), "radius": int(r), "src": "hsv"})
         return out
 
-    def detect(self, frame, use_yolo=True):
+    def detect(self, frame, use_yolo=True, skip_hsv=False):
         yol_dets = []
         if use_yolo and self.ready:
             yol_dets = self._yolo_detect(frame)
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         hsv_dets = []
-        hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
-        hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
+        if not skip_hsv:
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH)
+            hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH)
         dets = list(yol_dets)
         for hd in hsv_dets:
             is_dup = False
@@ -551,6 +625,22 @@ def _linux_v4l2_cameras():
 
 def scan_cameras():
     cams = []
+    
+    # Check for RealSense devices (like T265)
+    if RS_AVAILABLE:
+        try:
+            ctx = rs.context()
+            for dev in ctx.query_devices():
+                name = dev.get_info(rs.camera_info.name)
+                serial = dev.get_info(rs.camera_info.serial_number)
+                if "T265" in name:
+                    cams.append({"id": f"rs:{serial}:1", "name": f"{name} (Fisheye 1) [{serial}]"})
+                    cams.append({"id": f"rs:{serial}:2", "name": f"{name} (Fisheye 2) [{serial}]"})
+                else:
+                    cams.append({"id": f"rs:{serial}", "name": f"{name} [{serial}]"})
+        except Exception as e:
+            logging.error(f"RealSense scan error: {e}")
+
     if sys.platform == "darwin":
         try:
             p = subprocess.run(
@@ -616,10 +706,11 @@ def inference_loop():
                 continue
 
             proc = cv2.resize(frame, (PROCESS_W, PROCESS_H))
+            is_rs = str(cam.src).startswith("rs:")
             try:
-                dets = detector.detect(proc, use_yolo=detector.ready)
+                dets = detector.detect(proc, use_yolo=detector.ready, skip_hsv=is_rs)
             except Exception:
-                dets = detector.detect(proc, use_yolo=False)
+                dets = detector.detect(proc, use_yolo=False, skip_hsv=True)
 
             tracked = tracker.update(dets)
             live = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
