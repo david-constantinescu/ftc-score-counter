@@ -977,16 +977,18 @@ if __name__ == "__main__":
     threading.Thread(target=inference_loop, daemon=True).start()
     threading.Thread(target=timer_loop, daemon=True).start()
 
-    # Preload first two cameras instantly for faster startup preview
-    blue_cam.open(0)
-    red_cam.open(1)
-    _set_status("Preloading cameras...", True)
-
-    # Auto-detect cameras in the background to populate UI dropdowns fully
+    # Auto-detect cameras in the background and open the first two
     def auto_cameras():
         cams = scan_cameras()
         logging.info(f"Cameras found: {cams}")
         _set_status(f"Cameras ready: {len(cams)} found", True)
+        if len(cams) >= 2:
+            blue_cam.open(cams[0]["id"])
+            red_cam.open(cams[1]["id"])
+            _set_status(f"{len(cams)} cameras found, 2 active", True)
+        elif len(cams) >= 1:
+            blue_cam.open(cams[0]["id"])
+            _set_status(f"{len(cams)} camera found, 1 active", True)
 
     threading.Thread(target=auto_cameras, daemon=True).start()
 
