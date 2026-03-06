@@ -91,7 +91,7 @@ logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 PURPLE_LOW  = np.array([115, 90, 90])
 PURPLE_HIGH = np.array([155, 255, 255])
 # Lower saturation & value for green to catch extreme motion blur fading
-GREEN_LOW   = np.array([35,  40, 40])
+GREEN_LOW   = np.array([33,  30, 30])
 GREEN_HIGH  = np.array([85,  255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
@@ -99,7 +99,7 @@ PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 YOLO_BALL_CLASS = 32
 YOLO_CONF       = 0.35
 
-MIN_BALL_AREA   = 800
+MIN_BALL_AREA   = 400
 MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 15
 MAX_RADIUS      = 150
@@ -461,7 +461,7 @@ class BallDetector:
         kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern, iterations=1)
-        mask = cv2.erode(mask, kern, iterations=2)
+        mask = cv2.erode(mask, kern, iterations=1)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
         out = []
