@@ -208,25 +208,28 @@ class CameraThread:
             except ValueError:
                 pass
 
-        def _configure(c):
-            """Set MJPEG format + resolution to avoid USB bandwidth issues."""
-            if sys.platform == "linux":
-                c.set(cv2.CAP_PROP_FOURCC,
-                      cv2.VideoWriter.fourcc(*"MJPG"))
-            c.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
         def connect():
             c = None
+            
+            # We can pass properties at init in OpenCV 4+ to prevent USB bandwidth spike
+            # from default uncompressed YUYV streams opening.
+            params = []
+            if sys.platform == "linux":
+                params = [
+                    cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"),
+                    cv2.CAP_PROP_FRAME_WIDTH, 640,
+                    cv2.CAP_PROP_FRAME_HEIGHT, 480,
+                    cv2.CAP_PROP_BUFFERSIZE, 1
+                ]
+
             if sys.platform == "darwin" and isinstance(s, int):
                 c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
             elif sys.platform == "linux":
                 # Try V4L2 with integer index first (fastest)
                 idx = v4l2_idx if v4l2_idx is not None else (s if isinstance(s, int) else None)
                 if idx is not None:
-                    c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+                    c = cv2.VideoCapture(idx, cv2.CAP_V4L2, params)
                     if c.isOpened():
-                        _configure(c)
                         # Verify we can actually read; webcams often drop first few frames
                         for _ in range(5):
                             ret, _frame = c.read()
@@ -237,20 +240,18 @@ class CameraThread:
                         c.release()
                 # Fallback: string path with default backend
                 path = s if isinstance(s, str) else f"/dev/video{s}"
-                c = cv2.VideoCapture(path)
+                c = cv2.VideoCapture(path, cv2.CAP_ANY, params)
                 if c.isOpened():
-                    _configure(c)
                     return c
                 if c is not None:
                     c.release()
                 return None
             else:
                 c = cv2.VideoCapture(s)
+            
             if c is not None and not c.isOpened():
                 c.release()
                 return None
-            if c is not None:
-                _configure(c)
             return c
 
         self.cap = connect()
