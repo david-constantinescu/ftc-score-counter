@@ -88,22 +88,22 @@ USE_HALF = DEVICE in ("cuda",)  # MPS half is flaky on some models; CUDA only
 logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-PURPLE_LOW  = np.array([115, 90, 90])
-PURPLE_HIGH = np.array([155, 255, 255])
+PURPLE_LOW  = np.array([110, 50, 50])
+PURPLE_HIGH = np.array([165, 255, 255])
 # Lower saturation & value for green to catch extreme motion blur fading
-GREEN_LOW   = np.array([35,  40, 40])
-GREEN_HIGH  = np.array([85,  255, 255])
+GREEN_LOW   = np.array([30, 25, 25])
+GREEN_HIGH  = np.array([90, 255, 255])
 
 PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 
 YOLO_BALL_CLASS = 32
-YOLO_CONF       = 0.35
+YOLO_CONF       = 0.25
 
-MIN_BALL_AREA   = 800
+MIN_BALL_AREA   = 50
 MAX_BALL_AREA   = 80000
-MIN_RADIUS      = 15
-MAX_RADIUS      = 150
-KERN_SIZE       = (11, 11)
+MIN_RADIUS      = 4
+MAX_RADIUS      = 250
+KERN_SIZE       = (5, 5)
 CONFIRM_FRAMES  = 2
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
@@ -113,7 +113,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=15, max_dist=200):
+    def __init__(self, max_disappeared=3, max_dist=150):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -132,6 +132,12 @@ class CentroidTracker:
         return len(self.ever_confirmed)
 
     def update(self, dets):
+        # 1) Wipe out missing tracks near the bottom instantly so they don't capture new falling balls
+        for oid in list(self.disappeared.keys()):
+            if self.disappeared[oid] > 0 and self.objects.get(oid, {}).get("y", 0) > PROCESS_H * 0.75:
+                self.objects.pop(oid, None)
+                self.disappeared.pop(oid, None)
+
         if not dets:
             for oid in list(self.disappeared):
                 self.disappeared[oid] += 1
@@ -146,16 +152,25 @@ class CentroidTracker:
             return self.objects
 
         ids = list(self.objects.keys())
-        opos = np.array([[self.objects[i]["x"], self.objects[i]["y"]] for i in ids])
+        opos_pred = []
+        opos_actual = []
+        for i in ids:
+            obj = self.objects[i]
+            # Extrapolate position using previous downward velocity to match perfectly with falling balls
+            pred_y = obj["y"] + obj.get("dy", 15) * (self.disappeared[i] + 1)
+            opos_pred.append([obj["x"], min(pred_y, PROCESS_H)])
+            opos_actual.append([obj["x"], obj["y"]])
+            
+        opos_pred = np.array(opos_pred)
+        opos_actual = np.array(opos_actual)
         dpos = np.array([[d["x"], d["y"]] for d in dets])
-        D = np.linalg.norm(opos[:, None] - dpos[None, :], axis=2)
+        D = np.linalg.norm(opos_pred[:, None] - dpos[None, :], axis=2)
 
         # Heavily penalize linking a new detection to a ghost if the new detection
-        # is physically higher (y is smaller) by more than 50 pixels. Balls fall downward.
-        # This prevents consecutive balls from merging their IDs.
-        for r in range(len(opos)):
+        # is physically higher (y is smaller) by more than 30 pixels compared to its ACTUAL last pos.
+        for r in range(len(opos_actual)):
             for c in range(len(dpos)):
-                if dpos[c, 1] < opos[r, 1] - 50:
+                if dpos[c, 1] < opos_actual[r, 1] - 30:
                     D[r, c] += 9999.0
 
         used_r, used_c = set(), set()
@@ -166,7 +181,14 @@ class CentroidTracker:
             if D[r, c] > self.max_dist:
                 break
             oid = ids[r]
+            old_y = self.objects[oid]["y"]
             self.objects[oid].update(dets[c])
+            
+            # Update velocity (dy) over frames
+            new_dy = dets[c]["y"] - old_y
+            if new_dy > 0:
+                self.objects[oid]["dy"] = int(self.objects[oid].get("dy", new_dy) * 0.6 + new_dy * 0.4)
+                
             self.objects[oid]["age"] = self.objects[oid].get("age", 0) + 1
             self.disappeared[oid] = 0
             if self.objects[oid]["age"] >= CONFIRM_FRAMES:
@@ -190,6 +212,7 @@ class CentroidTracker:
     def _register(self, d):
         d = dict(d)
         d["age"] = 1
+        d["dy"] = 15  # Default expected falling speed
         self.objects[self.next_id] = d
         self.disappeared[self.next_id] = 0
         self.next_id += 1
@@ -459,9 +482,6 @@ class BallDetector:
                     continue
                 if w > MAX_RADIUS * 2 or h > MAX_RADIUS * 2:
                     continue
-                aspect = max(w, h) / max(min(w, h), 1)
-                if aspect > 4.5:  # Tolerate extreme motion blur elongation
-                    continue
                 cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
                 radius = int(max(w, h) / 2)
                 out.append({"x": cx, "y": cy, "radius": radius, "src": "yolo"})
@@ -469,10 +489,10 @@ class BallDetector:
 
     def _hsv_detect(self, hsv, low, high):
         mask = cv2.inRange(hsv, low, high)
-        kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern, iterations=1)
-        mask = cv2.erode(mask, kern, iterations=2)
+        kern_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        kern_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern_open, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kern_close, iterations=1)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_SIMPLE)
         out = []
