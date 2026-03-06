@@ -94,7 +94,7 @@ MAX_BALL_AREA   = 80000
 MIN_RADIUS      = 15
 MAX_RADIUS      = 150
 KERN_SIZE       = (11, 11)
-CONFIRM_FRAMES  = 6
+CONFIRM_FRAMES  = 2
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -103,7 +103,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=15, max_dist=60):
+    def __init__(self, max_disappeared=15, max_dist=150):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -390,7 +390,7 @@ class BallDetector:
                 if w > MAX_RADIUS * 2 or h > MAX_RADIUS * 2:
                     continue
                 aspect = max(w, h) / max(min(w, h), 1)
-                if aspect > 2.0:
+                if aspect > 4.5:  # Tolerate extreme motion blur elongation
                     continue
                 cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
                 radius = int(max(w, h) / 2)
