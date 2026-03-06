@@ -89,12 +89,12 @@ PROCESS_W, PROCESS_H = 384, 288   # multiple of 32 for YOLO
 YOLO_BALL_CLASS = 32
 YOLO_CONF       = 0.35
 
-MIN_BALL_AREA   = 200
+MIN_BALL_AREA   = 800
 MAX_BALL_AREA   = 80000
-MIN_RADIUS      = 7
+MIN_RADIUS      = 15
 MAX_RADIUS      = 150
-KERN_SIZE       = (5, 5)
-CONFIRM_FRAMES  = 3
+KERN_SIZE       = (11, 11)
+CONFIRM_FRAMES  = 6
 
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
@@ -103,7 +103,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=5, max_dist=80):
+    def __init__(self, max_disappeared=15, max_dist=60):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
