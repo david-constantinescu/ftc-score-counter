@@ -105,7 +105,7 @@ STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 #  Centroid Tracker
 # ══════════════════════════════════════════════════════════════════════════════
 class CentroidTracker:
-    def __init__(self, max_disappeared=3, max_dist=200):
+    def __init__(self, max_disappeared=5, max_dist=75):
         self.next_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
@@ -631,6 +631,8 @@ def inference_loop():
                 r = int(d.get("radius", 10))
                 color = (0, 255, 0) if d.get("src") == "hsv" else (255, 0, 255)
                 cv2.circle(disp, (int(d["x"]), int(d["y"])), r, color, 2)
+            cv2.putText(disp, f"Balls: {hw}  (live {live})", (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             # Pre-encode JPEG once (all streaming clients get same bytes)
             _, buf = cv2.imencode('.jpg', disp, encode_params)
