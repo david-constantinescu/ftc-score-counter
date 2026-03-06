@@ -832,7 +832,11 @@ def sse():
 @app.route("/api/cameras")
 def api_cameras():
     cams = scan_cameras()
-    return jsonify(cams)
+    return jsonify({
+        "cameras": cams,
+        "blue_src": blue_cam.src if blue_cam._running else "none",
+        "red_src": red_cam.src if red_cam._running else "none"
+    })
 
 
 @app.route("/api/camera/<side>", methods=["POST"])

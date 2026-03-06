@@ -220,10 +220,16 @@ function refreshCams() {
   const blueS = document.getElementById('blueCam');
   const redS = document.getElementById('redCam');
   blueS.disabled = true; redS.disabled = true;
-  fetch('/api/cameras').then(r=>r.json()).then(cams => {
+  fetch('/api/cameras').then(r=>r.json()).then(data => {
+    // If the server returns a dict with 'cameras', use it, otherwise assume it's just the array
+    const cams = data.cameras || data;
+    const blueStart = data.blue_src !== undefined ? String(data.blue_src) : "none";
+    const redStart = data.red_src !== undefined ? String(data.red_src) : "none";
+    
     ['blue','red'].forEach(side => {
       const sel = side==='blue' ? blueS : redS;
-      const cur = sel.value;
+      const initialSelected = side==='blue' ? blueStart : redStart;
+      const cur = sel.value === "none" && initialSelected !== "none" ? initialSelected : sel.value;
       sel.innerHTML = '<option value="none">None</option>';
       cams.forEach(c => {
         const o = document.createElement('option');
