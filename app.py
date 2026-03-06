@@ -226,10 +226,12 @@ class CameraThread:
                     c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
                     if c.isOpened():
                         _configure(c)
-                        # Verify we can actually read (some open but can't read)
-                        ret, _ = c.read()
-                        if ret:
-                            return c
+                        # Verify we can actually read; webcams often drop first few frames
+                        for _ in range(5):
+                            ret, _frame = c.read()
+                            if ret:
+                                return c
+                            time.sleep(0.1)
                     if c is not None:
                         c.release()
                 # Fallback: string path with default backend
@@ -238,7 +240,8 @@ class CameraThread:
                 if c.isOpened():
                     _configure(c)
                     return c
-                c.release()
+                if c is not None:
+                    c.release()
                 return None
             else:
                 c = cv2.VideoCapture(s)
@@ -458,7 +461,7 @@ def _linux_v4l2_cameras():
     try:
         p = subprocess.run(
             ["v4l2-ctl", "--list-devices"],
-            capture_output=True, text=True, timeout=5)
+            capture_output=True, text=True, timeout=2)
         if p.returncode == 0 and p.stdout.strip():
             current_name = None
             for line in p.stdout.splitlines():
@@ -466,11 +469,11 @@ def _linux_v4l2_cameras():
                 if not line_s:
                     continue
                 if not line.startswith("\t") and not line.startswith(" "):
-                    # Camera name line, e.g. "C270 HD WEBCAM (usb-...)"
-                    current_name = line_s.split(" (")[0].strip().rstrip(":")
+                    # Keep full name including bus for disambiguating identical models
+                    current_name = line_s.rstrip(":")
                 elif current_name and line_s.startswith("/dev/video"):
                     # First /dev/video* under a name is the capture node
-                    cams.append({"id": line_s, "name": f"{current_name} ({line_s})"})
+                    cams.append({"id": line_s, "name": f"{current_name}"})
                     current_name = None  # skip subsequent nodes (metadata)
             if cams:
                 return cams
@@ -492,10 +495,17 @@ def _linux_v4l2_cameras():
                 hw_name = f.read().strip()
         except Exception:
             hw_name = f"Camera {idx_str}"
-        # Deduplicate by name (first device per name is the capture node)
+        
+        # We don't have USB bus info easily in sysfs, so append the video node to keep identical models separate
         if hw_name in seen_buses:
-            continue
-        seen_buses.add(hw_name)
+            hw_name = f"{hw_name} (Node {idx_str})"
+        else:
+            seen_buses.add(hw_name)
+
+        # Still might have metadata nodes right next to capture nodes! 
+        # Usually metadata node is the next index, but without v4l2-ctl it's hard to tell. 
+        # We will just list all of them if they get past deduplication or don't deduplicate at all?
+        # Actually let's just use the hw_name plus dev for everything on sysfs fallback.
         cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
     return cams
 
