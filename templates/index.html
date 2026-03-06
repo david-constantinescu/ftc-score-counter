@@ -207,6 +207,11 @@ function adj(side, action) { post('/api/score/adjust', {side, action}); }
 function setCam(side) {
   const sel = document.getElementById(side==='blue'?'blueCam':'redCam');
   post('/api/camera/' + side, {src: sel.value});
+  // Force a reload of the image stream to start displaying immediately
+  const img = document.getElementById(side + 'Stream');
+  if (img) {
+      img.src = '/stream/' + side + '?t=' + new Date().getTime();
+  }
 }
 
 function refreshCams() {
