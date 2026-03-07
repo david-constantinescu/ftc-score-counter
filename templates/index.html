@@ -48,6 +48,21 @@ button:active{opacity:.7}
 .cam-bar select{padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#e0e0e0;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:border-color .15s}
 .cam-bar select:focus{border-color:#42a5f5;outline:none}
 .cam-bar select:disabled{opacity:.5;cursor:wait}
+.cam-bar .b-ip{background:#7c4dff;color:#fff}
+
+/* ── IP Camera Modal ────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#1a1a2e;border:1px solid #555;border-radius:12px;padding:24px 28px;min-width:340px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.modal h2{margin:0 0 14px;font-size:16px;color:#ffd740}
+.modal label{display:block;font-size:13px;margin-bottom:6px;color:#ccc}
+.modal input{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #555;background:#0f0f23;color:#e0e0e0;font-size:14px;margin-bottom:14px}
+.modal input:focus{border-color:#7c4dff;outline:none}
+.modal .modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.modal .modal-status{font-size:12px;min-height:18px;margin-bottom:10px}
+.modal .modal-status.ok{color:#4caf50}
+.modal .modal-status.err{color:#e53935}
+.modal .modal-status.wait{color:#ff9800}
 
 /* ── Status bar ────────────────────────────────── */
 .status-bar{display:flex;align-items:center;gap:8px;padding:5px 16px;background:#1a1a2e;border-top:1px solid #333;font-size:11px}
@@ -114,6 +129,7 @@ button:active{opacity:.7}
   <select id="blueCam" onchange="setCam('blue')"><option value="none">None</option></select>
   <label style="color:#ef5350;margin-left:12px">Red Cam:</label>
   <select id="redCam" onchange="setCam('red')"><option value="none">None</option></select>
+  <button class="b-ip b-sm" onclick="openIpModal()">Add IP Camera</button>
   <button class="b-reset b-sm" onclick="refreshCams(true)">Refresh Cameras</button>
 </div>
 
@@ -128,6 +144,20 @@ button:active{opacity:.7}
 <audio id="timerAudio" preload="auto">
   <source src="/static/ftctimer.mp3" type="audio/mpeg">
 </audio>
+
+<!-- IP Camera Modal -->
+<div class="modal-overlay" id="ipModal">
+  <div class="modal">
+    <h2>Add IP Camera</h2>
+    <label for="ipInput">IP Address &amp; Port (e.g. 192.168.0.100:4747)</label>
+    <input type="text" id="ipInput" placeholder="192.168.0.100:4747" autocomplete="off" spellcheck="false">
+    <div class="modal-status" id="ipStatus"></div>
+    <div class="modal-btns">
+      <button class="b-reset b-sm" onclick="closeIpModal()">Cancel</button>
+      <button class="b-ip b-sm" id="ipTestBtn" onclick="testIpCamera()">Test &amp; Add</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const audio = document.getElementById('timerAudio');
@@ -257,6 +287,53 @@ monitorStream('redStream',  '/stream/red');
 
 // Load camera list on page load
 refreshCams();
+
+/* ── IP Camera Modal ───────────────────────── */
+function openIpModal() {
+  document.getElementById('ipModal').classList.add('open');
+  document.getElementById('ipInput').value = '';
+  setIpStatus('', '');
+  document.getElementById('ipInput').focus();
+}
+function closeIpModal() {
+  document.getElementById('ipModal').classList.remove('open');
+}
+function setIpStatus(msg, cls) {
+  const el = document.getElementById('ipStatus');
+  el.textContent = msg;
+  el.className = 'modal-status' + (cls ? ' ' + cls : '');
+}
+function testIpCamera() {
+  const ip = document.getElementById('ipInput').value.trim();
+  if (!ip) { setIpStatus('Please enter an IP address.', 'err'); return; }
+  setIpStatus('Testing connection…', 'wait');
+  document.getElementById('ipTestBtn').disabled = true;
+  fetch('/api/camera/test_ip', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ip: ip})
+  }).then(r => r.json()).then(d => {
+    document.getElementById('ipTestBtn').disabled = false;
+    if (d.ok) {
+      setIpStatus('Camera found! Added to list.', 'ok');
+      refreshCams();
+      setTimeout(closeIpModal, 1200);
+    } else {
+      setIpStatus(d.error || 'Could not reach camera.', 'err');
+    }
+  }).catch(() => {
+    document.getElementById('ipTestBtn').disabled = false;
+    setIpStatus('Network error — check server.', 'err');
+  });
+}
+// Allow Enter key in IP input
+document.getElementById('ipInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') testIpCamera();
+});
+// Close modal on overlay click
+document.getElementById('ipModal').addEventListener('click', function(e) {
+  if (e.target === this) closeIpModal();
+});
 </script>
 </body>
 </html>

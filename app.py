@@ -18,6 +18,9 @@ import multiprocessing
 import time
 import json
 import queue
+import re
+import urllib.request
+import urllib.error
 from collections import OrderedDict
 
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
@@ -538,6 +541,58 @@ def _audio_cmd(cmd):
         state["audio_seq"] += 1
 
 
+# ── IP / DroidCam camera helpers ──────────────────────────────────────────────
+_ip_cameras = []  # user-added IP cameras: [{"id": "ip:...", "name": "..."}]
+_ip_cameras_lock = threading.Lock()
+
+def _check_droidcam(ip_port):
+    """Check if a DroidCam (or compatible) IP camera is reachable.
+    Tries http first, then https.  Returns the working video URL or None."""
+    # Sanitise: strip protocol if user included it
+    ip_port = re.sub(r'^https?://', '', ip_port).strip().rstrip('/')
+    for scheme in ('http', 'https'):
+        url = f"{scheme}://{ip_port}/video"
+        try:
+            req = urllib.request.Request(url, method='GET')
+            resp = urllib.request.urlopen(req, timeout=3)
+            # DroidCam returns multipart MJPEG — any 2xx is good
+            if resp.status < 400:
+                return url
+        except Exception:
+            continue
+    return None
+
+
+def _add_ip_camera(ip_port, name=None):
+    """Register an IP camera so it shows in the camera list.
+    Returns the camera dict or None if unreachable."""
+    video_url = _check_droidcam(ip_port)
+    if video_url is None:
+        return None
+    cam_id = f"ip:{ip_port}"
+    display = name or f"IP Camera ({ip_port})"
+    entry = {"id": cam_id, "name": display}
+    with _ip_cameras_lock:
+        # Avoid duplicates
+        if not any(c["id"] == cam_id for c in _ip_cameras):
+            _ip_cameras.append(entry)
+    return entry
+
+
+def _resolve_camera_src(src):
+    """Translate a camera id to the value CameraThread.open() needs.
+    Regular integer ids pass through; ip:host:port ids become an MJPEG URL."""
+    src_str = str(src)
+    if src_str.startswith("ip:"):
+        ip_port = src_str[3:]
+        video_url = _check_droidcam(ip_port)
+        return video_url if video_url else src_str
+    try:
+        return int(src_str)
+    except (ValueError, TypeError):
+        return src_str
+
+
 # ── Camera scanning ──────────────────────────────────────────────────────────
 import glob as _glob
 
@@ -666,6 +721,11 @@ def scan_cameras():
                 pass
     
     result = cams or [{"id": 0, "name": "Default Camera (index 0)"}]
+    # Append any user-added IP cameras
+    with _ip_cameras_lock:
+        for ipc in _ip_cameras:
+            if not any(c["id"] == ipc["id"] for c in result):
+                result.append(ipc)
     _cam_cache["ts"] = time.monotonic()
     _cam_cache["data"] = result
     return result
@@ -884,12 +944,9 @@ def api_set_camera(side):
         tracker.reset()
         _set_status(f"{side.upper()} camera disabled", True)
     else:
-        try:
-            src = int(src)
-        except (ValueError, TypeError):
-            pass
+        resolved = _resolve_camera_src(src)
         tracker.reset()
-        cam.open(src)
+        cam.open(resolved)
         _set_status(f"Opening {side.upper()} camera\u2026", True)
 
     return jsonify({"ok": True})
@@ -988,6 +1045,24 @@ def api_reset():
     return jsonify({"ok": True})
 
 
+@app.route("/api/camera/test_ip", methods=["POST"])
+def api_test_ip():
+    """Test if an IP camera (DroidCam) is reachable and optionally add it."""
+    data = request.get_json(force=True) or {}
+    ip_port = data.get("ip", "").strip()
+    if not ip_port:
+        return jsonify({"ok": False, "error": "Missing ip"}), 400
+    # Basic validation
+    ip_port = re.sub(r'^https?://', '', ip_port).strip().rstrip('/')
+    entry = _add_ip_camera(ip_port)
+    if entry is None:
+        return jsonify({"ok": False, "error": f"Cannot reach camera at {ip_port}"}), 200
+    # Invalidate camera cache so the new IP cam shows up
+    _cam_cache["ts"] = 0
+    _cam_cache["data"] = []
+    return jsonify({"ok": True, "camera": entry})
+
+
 @app.route("/api/status")
 def api_status():
     with state_lock:
@@ -1007,15 +1082,46 @@ if __name__ == "__main__":
 
     # Auto-detect cameras in the background and open the first two that work
     def auto_cameras():
+        # Try DroidCam at 192.168.0.197:4747 for the red goal first
+        droidcam_ip = "192.168.0.197:4747"
+        droidcam_url = None
+        logging.info(f"Checking for DroidCam at {droidcam_ip}…")
+        try:
+            droidcam_url = _check_droidcam(droidcam_ip)
+        except Exception:
+            pass
+        if droidcam_url:
+            logging.info(f"DroidCam found at {droidcam_ip}")
+            _add_ip_camera(droidcam_ip, f"DroidCam ({droidcam_ip})")
+        else:
+            logging.info(f"DroidCam not found at {droidcam_ip}, skipping")
+
         cams = scan_cameras()
         logging.info(f"Cameras found: {cams}")
         _set_status(f"Cameras ready: {len(cams)} found", True)
-        if len(cams) >= 2:
-            blue_cam.open(cams[0]["id"])
-            red_cam.open(cams[1]["id"])
-        elif len(cams) >= 1:
-            blue_cam.open(cams[0]["id"])
-        _set_status(f"{len(cams)} cameras found, {min(len(cams), 2)} active", True)
+
+        # Assign cameras: DroidCam goes to red, local cams to blue (then red fallback)
+        local_cams = [c for c in cams if not str(c["id"]).startswith("ip:")]
+        red_assigned = False
+
+        if droidcam_url:
+            red_cam.open(droidcam_url)
+            red_assigned = True
+            logging.info(f"Red goal: DroidCam {droidcam_ip}")
+
+        if local_cams:
+            blue_cam.open(local_cams[0]["id"])
+            logging.info(f"Blue goal: {local_cams[0]['name']}")
+            if not red_assigned and len(local_cams) >= 2:
+                red_cam.open(local_cams[1]["id"])
+                red_assigned = True
+        elif not droidcam_url and cams:
+            # Only IP cameras available; use first for blue
+            resolved = _resolve_camera_src(cams[0]["id"])
+            blue_cam.open(resolved)
+
+        active = sum(1 for c in (blue_cam, red_cam) if c.is_open() or c._running)
+        _set_status(f"{len(cams)} cameras found, {active} active", True)
 
     threading.Thread(target=auto_cameras, daemon=True).start()
 
