@@ -23,7 +23,9 @@ from collections import OrderedDict
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
 os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
 os.environ["USE_NNPACK"] = "0"
-os.environ["OPENCV_VIDEOIO_PRIORITY_LIST"] = "V4L2,FFMPEG,AVFOUNDATION,MSMF"
+# Let OpenCV auto-select the best video backend per platform
+if sys.platform == "darwin":
+    os.environ["OPENCV_VIDEOIO_PRIORITY_LIST"] = "AVFOUNDATION,FFMPEG"
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 logging.basicConfig(
@@ -210,14 +212,6 @@ class CameraThread:
     def _loop(self, src):
 
         s = int(src) if isinstance(src, str) and str(src).isdigit() else src
-
-        # On Linux, extract video index from /dev/videoN paths for V4L2
-        v4l2_idx = None
-        if sys.platform == "linux" and isinstance(s, str) and s.startswith("/dev/video"):
-            try:
-                v4l2_idx = int(s.replace("/dev/video", ""))
-            except ValueError:
-                pass
         
         def _configure(c):
             """Set MJPEG format + resolution to avoid USB bandwidth issues."""
@@ -228,48 +222,43 @@ class CameraThread:
             c.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             c.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
+        def _try_open(target, api=None):
+            """Try to open a single target; return configured cap or None."""
+            try:
+                c = cv2.VideoCapture(target, api) if api is not None else cv2.VideoCapture(target)
+            except Exception:
+                return None
+            if not c.isOpened():
+                c.release()
+                return None
+            _configure(c)
+            for _ in range(8):
+                ret, _ = c.read()
+                if ret:
+                    return c
+                time.sleep(0.15)
+            c.release()
+            return None
+
         def connect():
             with camera_connect_lock:
-                c = None
-                
-                params = []
-                if sys.platform == "linux":
-                    params = [
-                        cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"),
-                        cv2.CAP_PROP_FRAME_WIDTH, 640,
-                        cv2.CAP_PROP_FRAME_HEIGHT, 480
-                    ]
-
                 if sys.platform == "darwin" and isinstance(s, int):
-                    c = cv2.VideoCapture(s, cv2.CAP_AVFOUNDATION)
-                elif sys.platform == "linux":
-                    path = s if isinstance(s, str) else f"/dev/video{s}"
-                    # Try to use CAP_V4L2 with params to avoid initial uncompressed YUYV USB bandwidth overload
-                    try:
-                        c = cv2.VideoCapture(path, cv2.CAP_V4L2, params)
-                    except:
-                        c = cv2.VideoCapture(path, cv2.CAP_V4L2)
-                        
-                    if c.isOpened():
-                        _configure(c)
-                        # Verify we can actually read; webcams often drop first few frames
-                        for _ in range(5):
-                            ret, _frame = c.read()
-                            if ret:
-                                return c
-                            time.sleep(0.1)
-                    if c is not None:
-                        c.release()
-                    return None
-                else:
-                    c = cv2.VideoCapture(s)
-                
-                if c is not None and not c.isOpened():
-                    c.release()
-                    return None
+                    return _try_open(s, cv2.CAP_AVFOUNDATION)
+
+                # On Linux, scan_cameras returns pre-verified integer indices.
+                # Just open directly. Also try the original src as fallback.
+                logging.info(f"Opening camera: {src} (s={s})")
+                c = _try_open(s)
                 if c is not None:
-                    _configure(c)
-                return c
+                    logging.info(f"Camera {src} opened, backend={c.getBackendName()}")
+                    return c
+                # Fallback: if s != src (e.g. path string), try that too
+                if s != src:
+                    c = _try_open(src)
+                    if c is not None:
+                        logging.info(f"Camera {src} opened via fallback, backend={c.getBackendName()}")
+                        return c
+                return None
 
         self.cap = connect()
         if self.cap:
@@ -307,6 +296,7 @@ class CameraThread:
                     self.cap.release()
                     self.cap = None
                     self.is_ready = False
+                    time.sleep(2.0)  # Give device time to fully release
                 time.sleep(0.01)
 
         if self.cap:
@@ -555,8 +545,9 @@ def _linux_v4l2_cameras():
     """Enumerate V4L2 capture devices on Linux with real names.
     Uses v4l2-ctl --list-devices to get grouped output, falling back to sysfs.
     Only returns the primary capture node per camera (not metadata nodes).
+    After listing, probes each device to verify it can actually be opened.
     """
-    cams = []
+    named_cams = []
 
     # Method 1: v4l2-ctl --list-devices (most reliable for grouping)
     try:
@@ -570,48 +561,78 @@ def _linux_v4l2_cameras():
                 if not line_s:
                     continue
                 if not line.startswith("\t") and not line.startswith(" "):
-                    # Keep full name including bus for disambiguating identical models
                     current_name = line_s.rstrip(":")
                 elif current_name and line_s.startswith("/dev/video"):
-                    # First /dev/video* under a name is the capture node
-                    cams.append({"id": line_s, "name": f"{current_name}"})
+                    named_cams.append({"path": line_s, "name": current_name})
                     current_name = None  # skip subsequent nodes (metadata)
-            if cams:
-                return cams
-    except FileNotFoundError:
-        pass  # v4l2-ctl not installed
     except Exception:
         pass
 
-    # Method 2: sysfs — read device names, pick only capture-capable nodes
-    devs = sorted(_glob.glob("/dev/video*"))
-    seen_buses = set()
-    for dev in devs:
-        idx_str = dev.replace("/dev/video", "")
-        if not idx_str.isdigit():
-            continue
-        name_path = f"/sys/class/video4linux/video{idx_str}/name"
-        try:
-            with open(name_path) as f:
-                hw_name = f.read().strip()
-        except Exception:
-            hw_name = f"Camera {idx_str}"
-        
-        # We don't have USB bus info easily in sysfs, so append the video node to keep identical models separate
-        if hw_name in seen_buses:
-            hw_name = f"{hw_name} (Node {idx_str})"
-        else:
-            seen_buses.add(hw_name)
+    # Method 2 fallback: sysfs
+    if not named_cams:
+        devs = sorted(_glob.glob("/dev/video*"))
+        seen = set()
+        for dev in devs:
+            idx_str = dev.replace("/dev/video", "")
+            if not idx_str.isdigit():
+                continue
+            name_path = f"/sys/class/video4linux/video{idx_str}/name"
+            try:
+                with open(name_path) as f:
+                    hw_name = f.read().strip()
+            except Exception:
+                hw_name = f"Camera {idx_str}"
+            if hw_name in seen:
+                hw_name = f"{hw_name} (Node {idx_str})"
+            else:
+                seen.add(hw_name)
+            named_cams.append({"path": dev, "name": f"{hw_name} ({dev})"})
 
-        # Still might have metadata nodes right next to capture nodes! 
-        # Usually metadata node is the next index, but without v4l2-ctl it's hard to tell. 
-        # We will just list all of them if they get past deduplication or don't deduplicate at all?
-        # Actually let's just use the hw_name plus dev for everything on sysfs fallback.
-        cams.append({"id": dev, "name": f"{hw_name} ({dev})"})
-    return cams
+    if not named_cams:
+        return []
+
+    # Probe to find which devices can actually open and read frames.
+    # Build a name map from /dev/videoN paths to camera names.
+    path_to_name = {c["path"]: c["name"] for c in named_cams}
+    working = []
+    seen_fds = set()  # track which /dev/video* fds are actually opened
+
+    for idx in range(max(int(c["path"].replace("/dev/video", "")) for c in named_cams) + 2):
+        try:
+            cap = cv2.VideoCapture(idx)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            ret, _ = cap.read()
+            if not ret:
+                cap.release()
+                continue
+            # Check which physical device this index opened via /proc/self/fd
+            fd_check = subprocess.run(
+                f"ls -la /proc/{os.getpid()}/fd/ 2>/dev/null | grep video",
+                shell=True, capture_output=True, text=True)
+            dev_path = None
+            for fd_line in fd_check.stdout.strip().splitlines():
+                if "/dev/video" in fd_line:
+                    dev_path = "/dev/video" + fd_line.rsplit("/dev/video", 1)[-1].strip()
+                    break
+            cap.release()
+
+            if dev_path and dev_path in seen_fds:
+                continue  # already found a working index for this physical camera
+            if dev_path:
+                seen_fds.add(dev_path)
+
+            name = path_to_name.get(dev_path, f"Camera (index {idx})")
+            working.append({"id": idx, "name": name})
+            logging.info(f"Camera probe: idx={idx} -> {dev_path} ({name}) works")
+        except Exception:
+            pass
+
+    return working
 
 _cam_cache = {"ts": 0, "data": []}
-_CAM_CACHE_TTL = 5  # seconds
+_CAM_CACHE_TTL = 300  # seconds – camera list changes rarely; re-probe is expensive
 
 def scan_cameras():
     now = time.monotonic()
@@ -628,23 +649,22 @@ def scan_cameras():
                 items = json.loads(p.stdout).get("SPCameraDataType", [])
                 for i, item in enumerate(items):
                     cams.append({"id": i, "name": f"{item.get('_name', f'Camera {i}')} (index {i})"})
-                if cams:
-                    return cams
         except Exception:
             pass
     elif sys.platform == "linux":
         cams.extend(_linux_v4l2_cameras())
-        if cams:
-            return cams
-    # Fallback: probe by index (Windows or if above failed)
-    for idx in range(8):
-        try:
-            cap = cv2.VideoCapture(idx)
-            if cap.isOpened() and cap.read()[0]:
-                cams.append({"id": idx, "name": f"Camera {idx} (index {idx})"})
-            cap.release()
-        except Exception:
-            pass
+    
+    if not cams:
+        # Fallback: probe by index (Windows or if above failed)
+        for idx in range(8):
+            try:
+                cap = cv2.VideoCapture(idx)
+                if cap.isOpened() and cap.read()[0]:
+                    cams.append({"id": idx, "name": f"Camera {idx} (index {idx})"})
+                cap.release()
+            except Exception:
+                pass
+    
     result = cams or [{"id": 0, "name": "Default Camera (index 0)"}]
     _cam_cache["ts"] = time.monotonic()
     _cam_cache["data"] = result
@@ -836,6 +856,9 @@ def sse():
 
 @app.route("/api/cameras")
 def api_cameras():
+    if request.args.get("refresh"):
+        _cam_cache["ts"] = 0
+        _cam_cache["data"] = []
     cams = scan_cameras()
     return jsonify({
         "cameras": cams,
@@ -982,7 +1005,7 @@ if __name__ == "__main__":
     threading.Thread(target=inference_loop, daemon=True).start()
     threading.Thread(target=timer_loop, daemon=True).start()
 
-    # Auto-detect cameras in the background and open the first two
+    # Auto-detect cameras in the background and open the first two that work
     def auto_cameras():
         cams = scan_cameras()
         logging.info(f"Cameras found: {cams}")
@@ -990,10 +1013,9 @@ if __name__ == "__main__":
         if len(cams) >= 2:
             blue_cam.open(cams[0]["id"])
             red_cam.open(cams[1]["id"])
-            _set_status(f"{len(cams)} cameras found, 2 active", True)
         elif len(cams) >= 1:
             blue_cam.open(cams[0]["id"])
-            _set_status(f"{len(cams)} camera found, 1 active", True)
+        _set_status(f"{len(cams)} cameras found, {min(len(cams), 2)} active", True)
 
     threading.Thread(target=auto_cameras, daemon=True).start()
 
