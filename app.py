@@ -839,7 +839,6 @@ def timer_loop():
                         state["timer_running"] = False
                         state["status"] = "Match ended! Scores are final."
                         state["status_ok"] = True
-                _audio_cmd("stop")
                 logging.info(f"Timer: {state['timer_seconds']}s remaining")
         time.sleep(0.05)
 
