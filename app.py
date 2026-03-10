@@ -196,7 +196,7 @@ class CameraThread:
         self.cap = None
         self.src = None
         self.frame = None
-        self.frame_queue = queue.Queue(maxsize=300)
+        self.frame_queue = queue.Queue(maxsize=1)
         self.lock = threading.Lock()
         self._running = False
         self._thread = None
