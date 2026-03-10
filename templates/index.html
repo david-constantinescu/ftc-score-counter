@@ -250,6 +250,8 @@ function refreshCams(forceRefresh) {
   const blueS = document.getElementById('blueCam');
   const redS = document.getElementById('redCam');
   blueS.disabled = true; redS.disabled = true;
+  const refreshBtn = document.querySelector('button[onclick="refreshCams(true)"]');
+  if (refreshBtn) refreshBtn.textContent = 'Scanning...';
   const url = forceRefresh ? '/api/cameras?refresh=1' : '/api/cameras';
   fetch(url).then(r=>r.json()).then(data => {
     // If the server returns a dict with 'cameras', use it, otherwise assume it's just the array
@@ -272,7 +274,12 @@ function refreshCams(forceRefresh) {
       if ([...sel.options].some(o => o.value == cur)) sel.value = cur;
       sel.disabled = false;
     });
-  }).catch(() => { blueS.disabled = false; redS.disabled = false; });
+    if (refreshBtn) refreshBtn.textContent = 'Refresh Cameras';
+  }).catch((err) => { 
+    console.error('Failed to refresh cameras:', err);
+    blueS.disabled = false; redS.disabled = false;
+    if (refreshBtn) refreshBtn.textContent = 'Refresh Cameras';
+  });
 }
 
 /* Reconnect MJPEG streams on error */

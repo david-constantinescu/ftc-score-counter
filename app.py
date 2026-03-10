@@ -691,8 +691,11 @@ _CAM_CACHE_TTL = 300  # seconds – camera list changes rarely; re-probe is expe
 
 def scan_cameras():
     now = time.monotonic()
-    if _cam_cache["data"] and (now - _cam_cache["ts"]) < _CAM_CACHE_TTL:
+    cache_age = now - _cam_cache["ts"]
+    if _cam_cache["data"] and cache_age < _CAM_CACHE_TTL:
+        logging.info(f"Returning cached camera list ({len(_cam_cache['data'])} cameras, age={cache_age:.1f}s)")
         return _cam_cache["data"]
+    logging.info(f"Scanning for cameras (cache age={cache_age:.1f}s, ttl={_CAM_CACHE_TTL})")
     cams = []
 
     if sys.platform == "darwin":
@@ -728,6 +731,7 @@ def scan_cameras():
                 result.append(ipc)
     _cam_cache["ts"] = time.monotonic()
     _cam_cache["data"] = result
+    logging.info(f"Camera scan complete: {len(result)} cameras found: {[c['name'] for c in result]}")
     return result
 
 
@@ -915,10 +919,13 @@ def sse():
 
 @app.route("/api/cameras")
 def api_cameras():
-    if request.args.get("refresh"):
+    refresh = request.args.get("refresh")
+    if refresh is not None:
         _cam_cache["ts"] = 0
         _cam_cache["data"] = []
+        logging.info(f"Camera cache invalidated (refresh={refresh})")
     cams = scan_cameras()
+    logging.info(f"Returning {len(cams)} cameras (cache ts={_cam_cache['ts']})")
     return jsonify({
         "cameras": cams,
         "blue_src": blue_cam.src if blue_cam._running else "none",
