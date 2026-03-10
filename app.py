@@ -451,7 +451,7 @@ class BallDetector:
                 out.append({"x": cx, "y": cy, "radius": radius, "src": "yolo"})
         return out
 
-    def _hsv_detect(self, hsv, low, high, erode_iter=1):
+    def _hsv_detect(self, hsv, low, high, erode_iter=1, min_circularity=0.35):
         mask = cv2.inRange(hsv, low, high)
         kern = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KERN_SIZE)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kern, iterations=1)
@@ -466,18 +466,52 @@ class BallDetector:
             if area < MIN_BALL_AREA or area > MAX_BALL_AREA:
                 continue
             (cx, cy), r = cv2.minEnclosingCircle(cnt)
+            # Reject non-circular blobs (goal frame, edges, etc.)
+            circle_area = np.pi * r * r
+            if circle_area > 0 and (area / circle_area) < min_circularity:
+                continue
             out.append({"x": int(cx), "y": int(cy), "radius": int(r), "src": "hsv"})
         return out
 
-    def detect(self, frame, use_yolo=True, skip_hsv=False):
+    @staticmethod
+    def _is_red_hue(hsv_roi):
+        """Return True if the region is predominantly red-hued (goal frame)."""
+        if hsv_roi.size == 0:
+            return False
+        h = hsv_roi[:, :, 0]
+        s = hsv_roi[:, :, 1]
+        # Red hue wraps around 0/180 in OpenCV HSV
+        red_mask = ((h < 12) | (h > 168)) & (s > 50)
+        red_ratio = np.count_nonzero(red_mask) / max(h.size, 1)
+        return red_ratio > 0.25
+
+    def detect(self, frame, use_yolo=True, skip_hsv=False, side=None):
         yol_dets = []
         if use_yolo and self.ready:
             yol_dets = self._yolo_detect(frame)
         hsv_dets = []
+        hsv = None
         if not skip_hsv:
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             hsv_dets += self._hsv_detect(hsv, PURPLE_LOW, PURPLE_HIGH, erode_iter=1)
             hsv_dets += self._hsv_detect(hsv, GREEN_LOW, GREEN_HIGH, erode_iter=0)
+
+        # For the red-goal camera, reject HSV detections that sit on red pixels
+        # (the red goal frame can appear as a false green/purple blob)
+        if side == "red" and hsv is not None:
+            h, w = frame.shape[:2]
+            filtered = []
+            for d in hsv_dets:
+                r = d["radius"]
+                x1 = max(d["x"] - r, 0)
+                y1 = max(d["y"] - r, 0)
+                x2 = min(d["x"] + r, w)
+                y2 = min(d["y"] + r, h)
+                if self._is_red_hue(hsv[y1:y2, x1:x2]):
+                    continue  # skip — likely goal frame artefact
+                filtered.append(d)
+            hsv_dets = filtered
+
         # Merge all detections, then do full pairwise dedup
         all_raw = yol_dets + hsv_dets
         all_raw.sort(key=lambda d: d["radius"], reverse=True)
@@ -753,9 +787,9 @@ def inference_loop():
             proc = cv2.resize(frame, (PROCESS_W, PROCESS_H))
             is_rs = str(cam.src).startswith("rs:")
             try:
-                dets = detector.detect(proc, use_yolo=detector.ready, skip_hsv=is_rs)
+                dets = detector.detect(proc, use_yolo=detector.ready, skip_hsv=is_rs, side=side)
             except Exception:
-                dets = detector.detect(proc, use_yolo=False, skip_hsv=True)
+                dets = detector.detect(proc, use_yolo=False, skip_hsv=True, side=side)
 
             tracked = tracker.update(dets)
             live = sum(1 for oid in tracked if oid in tracker.ever_confirmed)
