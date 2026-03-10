@@ -380,7 +380,12 @@ class CameraThread:
     def stop(self):
         self._running = False
         if self._thread is not None and self._thread is not threading.current_thread():
-            self._thread.join(timeout=0.1)
+            # Use a generous timeout so the thread can finish any in-progress
+            # cap.read() / connect() call and release the device fd before we
+            # return.  The old 0.1 s was far too short: connect() alone can
+            # take up to ~1.2 s (8 × 0.15 s probe loop), so the thread would
+            # still hold the camera fd when the caller tried to reopen it.
+            self._thread.join(timeout=3.0)
             self._thread = None
         with self.lock:
             self.frame = None
@@ -600,7 +605,8 @@ def _linux_v4l2_cameras():
     """Enumerate V4L2 capture devices on Linux with real names.
     Uses v4l2-ctl --list-devices to get grouped output, falling back to sysfs.
     Only returns the primary capture node per camera (not metadata nodes).
-    After listing, probes each device to verify it can actually be opened.
+    Does NOT probe/open devices here — that would hold fds and block active
+    CameraThreads from reconnecting on refresh.
     """
     named_cams = []
 
@@ -618,15 +624,18 @@ def _linux_v4l2_cameras():
                 if not line.startswith("\t") and not line.startswith(" "):
                     current_name = line_s.rstrip(":")
                 elif current_name and line_s.startswith("/dev/video"):
-                    named_cams.append({"path": line_s, "name": current_name})
+                    # Extract the integer index from /dev/videoN
+                    idx_str = line_s.replace("/dev/video", "")
+                    if idx_str.isdigit():
+                        named_cams.append({"path": line_s, "name": current_name, "idx": int(idx_str)})
                     current_name = None  # skip subsequent nodes (metadata)
     except Exception:
         pass
 
-    # Method 2 fallback: sysfs
+    # Method 2 fallback: sysfs — only keep primary nodes (lowest index per hw name)
     if not named_cams:
         devs = sorted(_glob.glob("/dev/video*"))
-        seen = set()
+        seen_hw = set()
         for dev in devs:
             idx_str = dev.replace("/dev/video", "")
             if not idx_str.isdigit():
@@ -637,54 +646,25 @@ def _linux_v4l2_cameras():
                     hw_name = f.read().strip()
             except Exception:
                 hw_name = f"Camera {idx_str}"
-            if hw_name in seen:
-                hw_name = f"{hw_name} (Node {idx_str})"
-            else:
-                seen.add(hw_name)
-            named_cams.append({"path": dev, "name": f"{hw_name} ({dev})"})
+            # Skip metadata/duplicate nodes (same hw name already seen = higher-index node)
+            if hw_name in seen_hw:
+                continue
+            seen_hw.add(hw_name)
+            named_cams.append({"path": dev, "name": hw_name, "idx": int(idx_str)})
 
     if not named_cams:
         return []
 
-    # Probe to find which devices can actually open and read frames.
-    # Build a name map from /dev/videoN paths to camera names.
-    path_to_name = {c["path"]: c["name"] for c in named_cams}
-    working = []
-    seen_fds = set()  # track which /dev/video* fds are actually opened
+    # Convert to the {id, name} format expected by scan_cameras / the frontend.
+    # Use integer index as id so CameraThread can open directly.
+    result = []
+    for c in named_cams:
+        idx = c["idx"]
+        name = c["name"]
+        result.append({"id": idx, "name": f"{name} (index {idx})"})
+        logging.info(f"Camera enumerated: idx={idx} name={name!r}")
 
-    for idx in range(max(int(c["path"].replace("/dev/video", "")) for c in named_cams) + 2):
-        try:
-            cap = cv2.VideoCapture(idx)
-            if not cap.isOpened():
-                cap.release()
-                continue
-            ret, _ = cap.read()
-            if not ret:
-                cap.release()
-                continue
-            # Check which physical device this index opened via /proc/self/fd
-            fd_check = subprocess.run(
-                f"ls -la /proc/{os.getpid()}/fd/ 2>/dev/null | grep video",
-                shell=True, capture_output=True, text=True)
-            dev_path = None
-            for fd_line in fd_check.stdout.strip().splitlines():
-                if "/dev/video" in fd_line:
-                    dev_path = "/dev/video" + fd_line.rsplit("/dev/video", 1)[-1].strip()
-                    break
-            cap.release()
-
-            if dev_path and dev_path in seen_fds:
-                continue  # already found a working index for this physical camera
-            if dev_path:
-                seen_fds.add(dev_path)
-
-            name = path_to_name.get(dev_path, f"Camera (index {idx})")
-            working.append({"id": idx, "name": name})
-            logging.info(f"Camera probe: idx={idx} -> {dev_path} ({name}) works")
-        except Exception:
-            pass
-
-    return working
+    return result
 
 _cam_cache = {"ts": 0, "data": []}
 _CAM_CACHE_TTL = 300  # seconds – camera list changes rarely; re-probe is expensive
