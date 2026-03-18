@@ -353,15 +353,11 @@ select {
     <button class="b-primary settings-fab" onclick="openSettingsModal()" aria-label="Settings">⚙</button>
   </div>
 
-  <div class="main-area">
+    <div class="main-area">
     <div class="upper-zone">
-      <div class="team-pill red"></div>
-
       <div class="main-panel">
         <div class="main-timer" id="timer">2:30</div>
       </div>
-
-      <div class="team-pill blue"></div>
     </div>
 
     <div class="preview-cam-controls">
@@ -563,6 +559,7 @@ function post(url, body) {
 
 function timerStart() {
   unlockAudio();
+  handleAudio('play');
   post('/api/timer/start');
 }
 function timerPause() { post('/api/timer/pause'); }
