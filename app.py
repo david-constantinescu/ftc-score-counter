@@ -66,10 +66,7 @@ torch.set_num_threads(multiprocessing.cpu_count())
 from flask import (Flask, Response, jsonify, request,
                    render_template, send_from_directory)
 
-# Maximise CPU threading for Intel
-torch.set_num_threads(multiprocessing.cpu_count())
-cv2.setUseOptimized(True)
-cv2.setNumThreads(multiprocessing.cpu_count())
+
 
 # â”€â”€ Device detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _detect_device():

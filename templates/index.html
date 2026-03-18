@@ -1,642 +1,406 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FTC Goal Scorer</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif;
-  background: #000;
-  color: #fff;
-  height: 100vh;
-  overflow: hidden;
-}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTC Score Counter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-.scoreboard {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #000;
-}
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
 
-.bg-layer {
-  position: absolute;
-  inset: 0;
-  background: url('/static/bg.jpg') center/cover no-repeat;
-  opacity: 0.95;
-  z-index: 0;
-}
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
 
-.top-controls {
-  position: relative;
-  z-index: 30;
-  height: 86px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.52);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-}
+        /* Top Controls */
+        .top-controls {
+            height: 100px;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            padding: 0 20px;
+        }
 
-.control-center {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+        .top-controls button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
 
-button {
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 800;
-  padding: 10px 14px;
-  cursor: pointer;
-}
-button:hover { opacity: 0.9; }
+        .start-btn {
+            background-color: #4CAF50;
+            color: white;
+            font-size: 18px;
+            padding: 12px 28px;
+        }
 
-.b-start { background: #36b24f; color: #fff; }
-.b-reset { background: #5f6368; color: #fff; }
-.b-danger { background: #c62828; color: #fff; }
-.b-primary { background: #5e35b1; color: #fff; }
+        .reset-btn {
+            background-color: #f44336;
+            color: white;
+        }
 
-.btn-start-match {
-  font-size: 26px;
-  padding: 14px 34px;
-  min-width: 250px;
-  border-radius: 12px;
-}
+        .settings-btn {
+            background-color: #FF9800;
+            color: white;
+        }
 
-.btn-side {
-  font-size: 16px;
-  padding: 12px 16px;
-  min-width: 190px;
-}
+        /* Timer Area */
+        .timer-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-.settings-fab {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 46px;
-  height: 46px;
-  border-radius: 10px;
-  font-size: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
+        #timer {
+            font-size: 15rem;
+            font-weight: bold;
+            color: white;
+        }
 
-.main-area {
-  position: relative;
-  z-index: 2;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
+        /* Bottom Teams */
+        .bottom-teams {
+            height: 200px;
+            display: flex;
+            border-top: 2px solid rgba(255, 255, 255, 0.2);
+        }
 
-.upper-zone {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-top: 0.4vh;
-  transition: all 0.25s ease;
-}
+        .team-section {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-.main-panel {
-  width: min(70vw, 1140px);
-  height: min(68vh, 760px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.25s ease;
-}
+        .team-content {
+            padding: 20px;
+        }
 
-.main-timer {
-  color: #fff;
-  font-weight: 900;
-  font-size: min(24vw, 430px);
-  line-height: 0.86;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  text-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-  transition: all 0.25s ease;
-}
-.main-timer.danger { color: #ffd0d0; }
+        .team-numbers {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+        }
 
-.team-pill {
-  position: absolute;
-  top: 31%;
-  width: min(13.5vw, 240px);
-  height: min(15vh, 180px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 900;
-  font-size: min(3.7vw, 66px);
-  line-height: 1.06;
-}
-.team-pill.red { left: max(4vw, 24px); background: #e0002c; }
-.team-pill.blue { right: max(4vw, 24px); background: #1f77b7; }
+        #team-numbers-red {
+            background-color: #f44336;
+        }
 
-.preview-cam-controls {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px 10px;
-}
+        #team-numbers-blue {
+            background-color: #2196F3;
+        }
 
-.preview-row {
-  display: none;
-  min-height: 0;
-  gap: 10px;
-  height: 0;
-  padding: 0 12px 10px;
-}
+        /* Scores */
+        .scores {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            font-weight: bold;
+        }
 
-.preview-panel {
-  flex: 1;
-  min-width: 0;
-  background: #020202;
-  border: 2px solid rgba(255, 255, 255, 0.24);
-  border-radius: 8px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.preview-panel img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: #000;
-}
+        #red-score {
+            color: #f44336;
+        }
 
-select {
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #575757;
-  background: rgba(0, 0, 0, 0.65);
-  color: #efefef;
-  min-width: 170px;
-}
+        #blue-score {
+            color: #2196F3;
+        }
 
-.bottom-strip {
-  position: relative;
-  z-index: 10;
-  height: 17vh;
-  min-height: 98px;
-  max-height: 170px;
-  display: flex;
-  border-top: 2px solid rgba(255, 255, 255, 0.2);
-}
+        /* Settings Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
 
-.strip-side {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-}
-.strip-side.red { background: #bc0024; }
-.strip-side.blue { background: #165f98; }
+        .modal-content {
+            background-color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            width: 400px;
+        }
 
-.pixel-cells {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 3px;
-}
-.pixel-cell {
-  width: min(4.7vw, 72px);
-  height: min(4.7vw, 72px);
-  min-width: 28px;
-  min-height: 28px;
-  background: #f0f0f0;
-  border: 1px solid #c9c9c9;
-}
+        .modal-content h2 {
+            margin-bottom: 15px;
+        }
 
-.side-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-}
-.side-name { font-size: min(2vw, 34px); }
-.side-score { font-size: min(4.8vw, 82px); line-height: 0.9; }
-.side-teams {
-  font-size: min(1.25vw, 21px);
-  line-height: 1.05;
-  opacity: 0.95;
-  text-align: center;
-  margin-top: 3px;
-}
+        .settings-group {
+            margin-bottom: 15px;
+        }
 
-.strip-center {
-  width: min(13.8vw, 230px);
-  background: #f3f3f3;
-  color: #000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-left: 2px solid rgba(0, 0, 0, 0.22);
-  border-right: 2px solid rgba(0, 0, 0, 0.22);
-}
+        .settings-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
 
-.motifs {
-  display: flex;
-  gap: 8px;
-}
+        .settings-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background-color: #444;
+            color: white;
+        }
 
-.mot {
-  width: min(1.9vw, 28px);
-  height: min(1.9vw, 28px);
-  min-width: 12px;
-  min-height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-}
-.mot.g { background: #42b649; }
-.mot.p { background: #8e2bd6; }
+        .settings-group input[type="checkbox"] {
+            width: auto;
+            margin-right: 5px;
+        }
 
-.modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.8);
-  align-items: center;
-  justify-content: center;
-}
-.modal-overlay.open { display: flex; }
-.modal {
-  background: #1a1a2e;
-  border: 1px solid #555;
-  border-radius: 12px;
-  padding: 22px;
-  min-width: 360px;
-  max-width: 460px;
-}
-.modal h2 { margin-bottom: 12px; }
-.modal input[type="text"] {
-  width: 100%;
-  padding: 9px;
-  margin-bottom: 10px;
-  border: 1px solid #555;
-  border-radius: 6px;
-  background: #0f0f23;
-  color: #ececec;
-}
-.modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
 
-.scoreboard.preview-on .upper-zone {
-  align-items: flex-start;
-  padding-top: 0.9vh;
-}
-.scoreboard.preview-on .main-panel {
-  width: min(54vw, 880px);
-  height: min(30vh, 330px);
-}
-.scoreboard.preview-on .main-timer {
-  font-size: min(12.2vw, 205px);
-}
-.scoreboard.preview-on .team-pill {
-  top: 12%;
-  width: min(11.5vw, 190px);
-  height: min(11.5vh, 140px);
-  font-size: min(2.9vw, 50px);
-}
-.scoreboard.preview-on .preview-cam-controls {
-  display: flex;
-}
-.scoreboard.preview-on .preview-row {
-  display: flex;
-  height: 34vh;
-}
+        .modal-buttons button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
 
-.scoreboard.blue-left .team-pill.red { right: max(4vw, 24px); left: auto; }
-.scoreboard.blue-left .team-pill.blue { left: max(4vw, 24px); right: auto; }
-.scoreboard.blue-left .strip-side.red { order: 3; }
-.scoreboard.blue-left .strip-center { order: 2; }
-.scoreboard.blue-left .strip-side.blue { order: 1; }
+        .modal-buttons button:hover {
+            opacity: 0.8;
+        }
 
-@media (max-width: 1100px) {
-  .top-controls { height: auto; min-height: 86px; padding: 8px 66px 8px 8px; }
-  .btn-start-match { min-width: 200px; font-size: 21px; }
-  .btn-side { min-width: 150px; }
-}
-</style>
+        .save-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .cancel-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        /* Hide elements when teams are not shown */
+        .hidden {
+            display: none !important;
+        }
+    </style>
 </head>
 <body>
-<div class="scoreboard" id="scoreboard">
-  <div class="bg-layer"></div>
+    <div class="container">
+        <!-- Top Controls -->
+        <div class="top-controls">
+            <button class="start-btn" id="start-btn">Start Match</button>
+            <button class="reset-btn" id="reset-btn">Reset Match</button>
+            <button class="settings-btn" id="settings-btn">Settings</button>
+        </div>
 
-  <div class="top-controls">
-    <div class="control-center">
-      <button class="b-danger btn-side" onclick="resetBallCounts()">Reset Ball Count</button>
-      <button class="b-start btn-start-match" onclick="timerStart()">Start Match</button>
-      <button class="b-reset btn-side" onclick="timerReset()">Reset</button>
-    </div>
-    <button class="b-primary settings-fab" onclick="openSettingsModal()" aria-label="Settings">⚙</button>
-  </div>
+        <!-- Timer Area -->
+        <div class="timer-container">
+            <div id="timer">2:30</div>
+        </div>
 
-    <div class="main-area">
-    <div class="upper-zone">
-      <div class="main-panel">
-        <div class="main-timer" id="timer">2:30</div>
-      </div>
-    </div>
-
-    <div class="preview-cam-controls">
-      <select id="redCam" onchange="setCam('red')"><option value="none">Red Camera</option></select>
-      <select id="blueCam" onchange="setCam('blue')"><option value="none">Blue Camera</option></select>
-      <button class="b-reset" onclick="refreshCams(true)">Refresh Cameras</button>
-    </div>
-
-    <div class="preview-row">
-      <div class="preview-panel"><img id="redStream" src="/stream/red" alt="Red"></div>
-      <div class="preview-panel"><img id="blueStream" src="/stream/blue" alt="Blue"></div>
-    </div>
-  </div>
-
-  <div class="bottom-strip">
-    <div class="strip-side red">
-      <div class="pixel-cells">
-        <div class="pixel-cell"></div>
-        <div class="pixel-cell"></div>
-      </div>
-      <div class="side-label">
-        <div class="side-name">Red</div>
-        <div class="side-score" id="redBottom">0</div>
-        <div class="side-teams" id="redTeamsBottom">12560<br>12560</div>
-      </div>
+        <!-- Bottom Teams -->
+        <div class="bottom-teams">
+            <div class="team-section" id="team-numbers-red">
+                <div class="team-content">
+                    <div class="team-numbers" id="red-teams">1234<br>5678</div>
+                </div>
+            </div>
+            <div class="team-section scores">
+                <div id="red-score">0</div>
+            </div>
+            <div class="team-section scores">
+                <div id="blue-score">0</div>
+            </div>
+            <div class="team-section" id="team-numbers-blue">
+                <div class="team-content">
+                    <div class="team-numbers" id="blue-teams">9012<br>3456</div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="strip-center">
-      <div class="motifs" id="motifGroup">
-        <div class="mot g" id="mot1" onclick="setMotifGreen(0)"></div>
-        <div class="mot p" id="mot2" onclick="setMotifGreen(1)"></div>
-        <div class="mot p" id="mot3" onclick="setMotifGreen(2)"></div>
-      </div>
+    <!-- Settings Modal -->
+    <div class="modal" id="settings-modal">
+        <div class="modal-content">
+            <h2>Settings</h2>
+            <div class="settings-group">
+                <label for="red-team-1">Red Team 1:</label>
+                <input type="text" id="red-team-1" value="1234">
+            </div>
+            <div class="settings-group">
+                <label for="red-team-2">Red Team 2:</label>
+                <input type="text" id="red-team-2" value="5678">
+            </div>
+            <div class="settings-group">
+                <label for="blue-team-1">Blue Team 1:</label>
+                <input type="text" id="blue-team-1" value="9012">
+            </div>
+            <div class="settings-group">
+                <label for="blue-team-2">Blue Team 2:</label>
+                <input type="text" id="blue-team-2" value="3456">
+            </div>
+            <div class="settings-group">
+                <label for="show-teams">Show Teams:</label>
+                <input type="checkbox" id="show-teams" checked>
+            </div>
+            <div class="modal-buttons">
+                <button class="save-btn" id="save-settings">Save</button>
+                <button class="cancel-btn" id="cancel-settings">Cancel</button>
+            </div>
+        </div>
     </div>
 
-    <div class="strip-side blue">
-      <div class="side-label">
-        <div class="side-name">Blue</div>
-        <div class="side-score" id="blueBottom">0</div>
-        <div class="side-teams" id="blueTeamsBottom">12560<br>12560</div>
-      </div>
-      <div class="pixel-cells">
-        <div class="pixel-cell"></div>
-        <div class="pixel-cell"></div>
-      </div>
-    </div>
-  </div>
-</div>
+    <script>
+        // Timer functionality
+        let timerInterval;
+        let timeLeft = 150; // 2:30 in seconds
+        let audioUnlocked = false;
 
-<audio id="timerAudio" preload="auto">
-  <source src="/static/ftctimer.mp3" type="audio/mpeg">
-</audio>
+        const timerElement = document.getElementById('timer');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const settingsBtn = document.getElementById('settings-btn');
+        const modal = document.getElementById('settings-modal');
+        const saveSettingsBtn = document.getElementById('save-settings');
+        const cancelSettingsBtn = document.getElementById('cancel-settings');
+        const showTeamsCheckbox = document.getElementById('show-teams');
+        const redTeamsElement = document.getElementById('red-teams');
+        const blueTeamsElement = document.getElementById('blue-teams');
+        const teamNumbersRedElement = document.getElementById('team-numbers-red');
+        const teamNumbersBlueElement = document.getElementById('team-numbers-blue');
 
-<div class="modal-overlay" id="settingsModal">
-  <div class="modal">
-    <h2>Settings</h2>
+        // Initialize
+        updateTimer();
+        applyTeamsVisibility(false);
 
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
-      <input type="checkbox" id="flipLayoutCheck"> Blue on left
-    </label>
-
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
-      <input type="checkbox" id="showTeamsCheck" checked> Show teams
-    </label>
-
-    <div style="display:flex;gap:12px;">
-      <div style="flex:1;">
-        <label style="color:#ef5350;display:block;margin-bottom:4px;">Red Team 1</label>
-        <input type="text" id="inputRed1" value="12560">
-        <label style="color:#ef5350;display:block;margin-bottom:4px;">Red Team 2</label>
-        <input type="text" id="inputRed2" value="12560">
-      </div>
-      <div style="flex:1;">
-        <label style="color:#42a5f5;display:block;margin-bottom:4px;">Blue Team 1</label>
-        <input type="text" id="inputBlue1" value="12560">
-        <label style="color:#42a5f5;display:block;margin-bottom:4px;">Blue Team 2</label>
-        <input type="text" id="inputBlue2" value="12560">
-      </div>
-    </div>
-
-    <div style="display:flex;gap:8px;margin-top:12px;">
-      <button class="b-primary" style="flex:1;" onclick="togglePreviewsBtn()">Toggle Previews</button>
-      <button class="b-reset" style="flex:1;" onclick="timerPause()">Pause</button>
-    </div>
-
-    <div class="modal-btns">
-      <button class="b-reset" onclick="closeSettingsModal()">Cancel</button>
-      <button class="b-primary" onclick="saveSettings()">Save</button>
-    </div>
-  </div>
-</div>
-
-<script>
-let previewsVisible = false;
-let motifGreenIndex = 0;
-let lastAudioSeq = 0;
-let audioUnlocked = false;
-const timerAudio = document.getElementById('timerAudio');
-
-function handleAudio(cmd) {
-  if (!cmd) return;
-  if (cmd === 'play') {
-    timerAudio.currentTime = 0;
-    timerAudio.play().catch(() => {});
-  } else if (cmd === 'pause') {
-    timerAudio.pause();
-  } else if (cmd === 'resume') {
-    timerAudio.play().catch(() => {});
-  } else if (cmd === 'stop') {
-    timerAudio.pause();
-    timerAudio.currentTime = 0;
-  }
-}
-
-function unlockAudio() {
-  if (audioUnlocked) return;
-  const p = timerAudio.play();
-  if (p) {
-    p.then(() => {
-      timerAudio.pause();
-      timerAudio.currentTime = 0;
-      audioUnlocked = true;
-    }).catch(() => {});
-  }
-}
-
-function setMotifGreen(index) {
-  motifGreenIndex = index;
-  document.getElementById('mot1').className = 'mot ' + (motifGreenIndex === 0 ? 'g' : 'p');
-  document.getElementById('mot2').className = 'mot ' + (motifGreenIndex === 1 ? 'g' : 'p');
-  document.getElementById('mot3').className = 'mot ' + (motifGreenIndex === 2 ? 'g' : 'p');
-}
-
-function openSettingsModal() {
-  document.getElementById('settingsModal').classList.add('open');
-}
-
-function closeSettingsModal() {
-  document.getElementById('settingsModal').classList.remove('open');
-}
-
-function applyTeamsVisibility(show) {
-  const r1 = document.getElementById('inputRed1').value.trim();
-  const r2 = document.getElementById('inputRed2').value.trim();
-  const b1 = document.getElementById('inputBlue1').value.trim();
-  const b2 = document.getElementById('inputBlue2').value.trim();
-
-  const redBottom = document.getElementById('redTeamsBottom');
-  const blueBottom = document.getElementById('blueTeamsBottom');
-
-  const redLines = [r1, r2].filter(Boolean);
-  const blueLines = [b1, b2].filter(Boolean);
-
-  if (show && redLines.length) {
-    redBottom.innerHTML = redLines.join('<br>');
-    redBottom.style.display = 'block';
-  } else {
-    redBottom.innerHTML = '';
-    redBottom.style.display = 'none';
-  }
-
-  if (show && blueLines.length) {
-    blueBottom.innerHTML = blueLines.join('<br>');
-    blueBottom.style.display = 'block';
-  } else {
-    blueBottom.innerHTML = '';
-    blueBottom.style.display = 'none';
-  }
-}
-
-function saveSettings() {
-  const show = document.getElementById('showTeamsCheck').checked;
-  const flip = document.getElementById('flipLayoutCheck').checked;
-
-  document.getElementById('scoreboard').classList.toggle('blue-left', flip);
-  applyTeamsVisibility(show);
-
-  closeSettingsModal();
-}
-
-function togglePreviewsBtn() {
-  previewsVisible = !previewsVisible;
-  document.getElementById('scoreboard').classList.toggle('preview-on', previewsVisible);
-
-  if (previewsVisible) {
-    refreshCams();
-    document.getElementById('redStream').src = '/stream/red?t=' + Date.now();
-    document.getElementById('blueStream').src = '/stream/blue?t=' + Date.now();
-  }
-}
-
-function post(url, body) {
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {})
-  });
-}
-
-function timerStart() {
-  unlockAudio();
-  handleAudio('play');
-  post('/api/timer/start');
-}
-function timerPause() { post('/api/timer/pause'); }
-function timerReset() { post('/api/timer/reset'); }
-
-function resetBallCounts() {
-  post('/api/score/adjust', { side: 'red', action: 'clear' });
-  post('/api/score/adjust', { side: 'blue', action: 'clear' });
-}
-
-function setCam(side) {
-  const sel = document.getElementById(side === 'blue' ? 'blueCam' : 'redCam');
-  post('/api/camera/' + side, { src: sel.value }).then(() => {
-    const img = document.getElementById(side + 'Stream');
-    if (img) img.src = '/stream/' + side + '?t=' + Date.now();
-  });
-}
-
-function refreshCams(forceRefresh) {
-  const url = forceRefresh ? '/api/cameras?refresh=1' : '/api/cameras';
-  fetch(url)
-    .then(r => r.json())
-    .then(data => {
-      const cams = data.cameras || [];
-      const redSel = document.getElementById('redCam');
-      const blueSel = document.getElementById('blueCam');
-
-      const redCurrent = data.red_src !== undefined ? String(data.red_src) : 'none';
-      const blueCurrent = data.blue_src !== undefined ? String(data.blue_src) : 'none';
-
-      [['red', redSel, redCurrent], ['blue', blueSel, blueCurrent]].forEach(([side, sel, current]) => {
-        sel.innerHTML = '<option value="none">' + (side === 'red' ? 'Red' : 'Blue') + ' Camera</option>';
-        cams.forEach(c => {
-          const o = document.createElement('option');
-          o.value = c.id;
-          o.textContent = c.name;
-          sel.appendChild(o);
-        });
-        if ([...sel.options].some(o => String(o.value) === current)) {
-          sel.value = current;
+        // Timer functions
+        function updateTimer() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         }
-      });
-    })
-    .catch(() => {});
-}
 
-function monitorStream(id, url) {
-  const img = document.getElementById(id);
-  img.onerror = function () {
-    setTimeout(() => { img.src = url + '?t=' + Date.now(); }, 1500);
-  };
-}
+        function startTimer() {
+            if (!audioUnlocked) {
+                unlockAudio();
+            }
+            
+            if (timerInterval) return; // Timer already running
+            
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimer();
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                    handleAudio('stop');
+                } else if (timeLeft <= 30) {
+                    handleAudio('play');
+                }
+            }, 1000);
+        }
 
-const es = new EventSource('/events');
-es.onmessage = function (e) {
-  const d = JSON.parse(e.data);
-  document.getElementById('redBottom').textContent = d.red_hw;
-  document.getElementById('blueBottom').textContent = d.blue_hw;
+        function resetTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            timeLeft = 150;
+            updateTimer();
+            handleAudio('stop');
+        }
 
-  const m = Math.floor(d.timer_seconds / 60);
-  const s = d.timer_seconds % 60;
-  const t = m + ':' + String(s).padStart(2, '0');
+        // Audio functionality
+        function unlockAudio() {
+            // Create a temporary audio element to unlock audio
+            const tempAudio = new Audio();
+            tempAudio.play().then(() => {
+                audioUnlocked = true;
+            }).catch(() => {
+                // Auto-play might be blocked, user interaction needed
+                console.log('Audio locked');
+            });
+        }
 
-  const timer = document.getElementById('timer');
-  timer.textContent = t;
-  timer.classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
+        function handleAudio(action) {
+            // This is a mock function to simulate audio
+            console.log(`Audio ${action}`);
+        }
 
-  if (typeof d.audio_seq === 'number' && d.audio_seq > lastAudioSeq) {
-    lastAudioSeq = d.audio_seq;
-    handleAudio(d.audio_cmd);
-  }
-};
+        // Teams functionality
+        function applyTeamsVisibility(show) {
+            if (show) {
+                teamNumbersRedElement.classList.remove('hidden');
+                teamNumbersBlueElement.classList.remove('hidden');
+                updateTeamNumbers();
+            } else {
+                teamNumbersRedElement.classList.add('hidden');
+                teamNumbersBlueElement.classList.add('hidden');
+            }
+        }
 
-monitorStream('redStream', '/stream/red');
-monitorStream('blueStream', '/stream/blue');
-setMotifGreen(0);
-applyTeamsVisibility(true);
-</script>
+        function updateTeamNumbers() {
+            const redTeam1 = document.getElementById('red-team-1').value;
+            const redTeam2 = document.getElementById('red-team-2').value;
+            const blueTeam1 = document.getElementById('blue-team-1').value;
+            const blueTeam2 = document.getElementById('blue-team-2').value;
+            
+            redTeamsElement.textContent = `${redTeam1}\n${redTeam2}`;
+            blueTeamsElement.textContent = `${blueTeam1}\n${blueTeam2}`;
+        }
+
+        // Modal functions
+        function openModal() {
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            modal.style.display = 'none';
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', startTimer);
+        resetBtn.addEventListener('click', resetTimer);
+        settingsBtn.addEventListener('click', openModal);
+        cancelSettingsBtn.addEventListener('click', closeModal);
+        saveSettingsBtn.addEventListener('click', () => {
+            applyTeamsVisibility(showTeamsCheckbox.checked);
+            closeModal();
+        });
+        showTeamsCheckbox.addEventListener('change', (e) => {
+            applyTeamsVisibility(e.target.checked);
+        });
+
+        // Close modal when clicking outside
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+    </script>
 </body>
 </html>
