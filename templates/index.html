@@ -34,38 +34,70 @@ body {
 .top-controls {
   position: relative;
   z-index: 30;
+  height: 86px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.55);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.52);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.control-group { display: flex; align-items: center; gap: 8px; }
+.control-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 button {
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
-  font-weight: 700;
-  padding: 8px 14px;
+  font-weight: 800;
+  padding: 10px 14px;
   cursor: pointer;
 }
 button:hover { opacity: 0.9; }
-.b-start { background: #43a047; color: #fff; }
-.b-pause { background: #fb8c00; color: #fff; }
+
+.b-start { background: #36b24f; color: #fff; }
 .b-reset { background: #5f6368; color: #fff; }
-.b-primary { background: #5e35b1; color: #fff; }
 .b-danger { background: #c62828; color: #fff; }
+.b-primary { background: #5e35b1; color: #fff; }
+
+.btn-start-match {
+  font-size: 26px;
+  padding: 14px 34px;
+  min-width: 250px;
+  border-radius: 12px;
+}
+
+.btn-side {
+  font-size: 16px;
+  padding: 12px 16px;
+  min-width: 190px;
+}
+
+.settings-fab {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
 
 .main-area {
   position: relative;
   z-index: 2;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .upper-zone {
@@ -75,71 +107,74 @@ button:hover { opacity: 0.9; }
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: 0.4vh;
   transition: all 0.25s ease;
-  padding-top: 1vh;
 }
 
 .main-panel {
-  width: min(52vw, 920px);
-  height: min(58vh, 620px);
-  background: #ededed;
-  border-radius: 2px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  width: min(70vw, 1140px);
+  height: min(68vh, 760px);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 2vh;
   transition: all 0.25s ease;
 }
 
 .main-timer {
-  color: #000;
+  color: #fff;
   font-weight: 900;
-  font-size: min(15vw, 300px);
-  line-height: 0.9;
+  font-size: min(24vw, 430px);
+  line-height: 0.86;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+  text-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
   transition: all 0.25s ease;
 }
-.main-timer.danger { color: #d32f2f; }
+.main-timer.danger { color: #ffd0d0; }
 
 .team-pill {
   position: absolute;
-  top: 27%;
-  width: min(14vw, 250px);
-  height: min(16vh, 190px);
+  top: 31%;
+  width: min(13.5vw, 240px);
+  height: min(15vh, 180px);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   font-weight: 900;
-  font-size: min(3.9vw, 72px);
-  line-height: 1.05;
-  letter-spacing: 1px;
+  font-size: min(3.7vw, 66px);
+  line-height: 1.06;
 }
-.team-pill.red { left: max(4vw, 30px); background: #e0002c; }
-.team-pill.blue { right: max(4vw, 30px); background: #1f77b7; }
+.team-pill.red { left: max(4vw, 24px); background: #e0002c; }
+.team-pill.blue { right: max(4vw, 24px); background: #1f77b7; }
 
 .team-numbers {
-  display: none;
+  display: flex;
   flex-direction: column;
   align-items: center;
 }
-.team-numbers.visible { display: flex; }
+
+.preview-cam-controls {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
 
 .preview-row {
   display: none;
-  height: 0;
   min-height: 0;
   gap: 10px;
+  height: 0;
   padding: 0 12px 10px;
-  transition: all 0.25s ease;
 }
 
 .preview-panel {
   flex: 1;
   min-width: 0;
-  background: #050505;
-  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: #020202;
+  border: 2px solid rgba(255, 255, 255, 0.24);
   border-radius: 8px;
   overflow: hidden;
   display: flex;
@@ -153,31 +188,23 @@ button:hover { opacity: 0.9; }
   background: #000;
 }
 
-.preview-cam-controls {
-  display: none;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px 10px;
-}
-
 select {
   padding: 6px 8px;
-  border-radius: 5px;
-  border: 1px solid #555;
+  border-radius: 6px;
+  border: 1px solid #575757;
   background: rgba(0, 0, 0, 0.65);
-  color: #f1f1f1;
-  font-size: 13px;
-  min-width: 160px;
+  color: #efefef;
+  min-width: 170px;
 }
 
 .bottom-strip {
   position: relative;
   z-index: 10;
-  height: 16vh;
-  min-height: 96px;
-  max-height: 160px;
+  height: 17vh;
+  min-height: 98px;
+  max-height: 170px;
   display: flex;
-  border-top: 2px solid rgba(255, 255, 255, 0.22);
+  border-top: 2px solid rgba(255, 255, 255, 0.2);
 }
 
 .strip-side {
@@ -196,12 +223,12 @@ select {
   gap: 3px;
 }
 .pixel-cell {
-  width: min(5.2vw, 76px);
-  height: min(5.2vw, 76px);
+  width: min(4.7vw, 72px);
+  height: min(4.7vw, 72px);
   min-width: 28px;
   min-height: 28px;
-  background: #efefef;
-  border: 1px solid #c8c8c8;
+  background: #f0f0f0;
+  border: 1px solid #c9c9c9;
 }
 
 .side-label {
@@ -211,42 +238,45 @@ select {
   justify-content: center;
   font-weight: 800;
 }
-.side-name { font-size: min(2vw, 36px); }
-.side-score { font-size: min(5.2vw, 84px); line-height: 0.92; }
+.side-name { font-size: min(2vw, 34px); }
+.side-score { font-size: min(4.8vw, 82px); line-height: 0.9; }
+.side-teams {
+  font-size: min(1.25vw, 21px);
+  line-height: 1.05;
+  opacity: 0.95;
+  text-align: center;
+  margin-top: 3px;
+}
 
 .strip-center {
-  width: min(15.5vw, 260px);
-  background: #f2f2f2;
+  width: min(13.8vw, 230px);
+  background: #f3f3f3;
   color: #000;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  border-left: 2px solid rgba(0, 0, 0, 0.2);
-  border-right: 2px solid rgba(0, 0, 0, 0.2);
+  gap: 6px;
+  border-left: 2px solid rgba(0, 0, 0, 0.22);
+  border-right: 2px solid rgba(0, 0, 0, 0.22);
 }
-
-.bot-icon { font-size: min(2.2vw, 34px); line-height: 1; }
 
 .motifs {
   display: flex;
   gap: 8px;
-  cursor: pointer;
-  padding: 2px 4px;
 }
 
 .mot {
-  width: min(1.8vw, 26px);
-  height: min(1.8vw, 26px);
+  width: min(1.9vw, 28px);
+  height: min(1.9vw, 28px);
   min-width: 12px;
   min-height: 12px;
   border-radius: 50%;
   border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
 }
-.mot.g { background: #41b649; }
+.mot.g { background: #42b649; }
 .mot.p { background: #8e2bd6; }
-.mot.w { background: #f8f8f8; }
 
 .modal-overlay {
   display: none;
@@ -262,53 +292,57 @@ select {
   background: #1a1a2e;
   border: 1px solid #555;
   border-radius: 12px;
-  padding: 24px;
-  min-width: 330px;
-  max-width: 420px;
+  padding: 22px;
+  min-width: 360px;
+  max-width: 460px;
 }
-.modal h2 { margin-bottom: 14px; }
+.modal h2 { margin-bottom: 12px; }
 .modal input[type="text"] {
   width: 100%;
   padding: 9px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   border: 1px solid #555;
   border-radius: 6px;
   background: #0f0f23;
-  color: #e5e5e5;
+  color: #ececec;
 }
 .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
 .scoreboard.preview-on .upper-zone {
   align-items: flex-start;
-  padding-top: 1.3vh;
+  padding-top: 0.9vh;
 }
 .scoreboard.preview-on .main-panel {
-  width: min(44vw, 760px);
-  height: min(26vh, 290px);
-  padding-top: 1vh;
+  width: min(54vw, 880px);
+  height: min(30vh, 330px);
 }
 .scoreboard.preview-on .main-timer {
-  font-size: min(9.1vw, 148px);
+  font-size: min(12.2vw, 205px);
 }
 .scoreboard.preview-on .team-pill {
-  top: 11%;
+  top: 12%;
   width: min(11.5vw, 190px);
-  height: min(11vh, 135px);
-  font-size: min(3vw, 50px);
-}
-.scoreboard.preview-on .preview-row {
-  display: flex;
-  height: 32vh;
+  height: min(11.5vh, 140px);
+  font-size: min(2.9vw, 50px);
 }
 .scoreboard.preview-on .preview-cam-controls {
   display: flex;
 }
+.scoreboard.preview-on .preview-row {
+  display: flex;
+  height: 34vh;
+}
+
+.scoreboard.blue-left .team-pill.red { right: max(4vw, 24px); left: auto; }
+.scoreboard.blue-left .team-pill.blue { left: max(4vw, 24px); right: auto; }
+.scoreboard.blue-left .strip-side.red { order: 3; }
+.scoreboard.blue-left .strip-center { order: 2; }
+.scoreboard.blue-left .strip-side.blue { order: 1; }
 
 @media (max-width: 1100px) {
-  .top-controls { flex-wrap: wrap; }
-  .main-panel { width: 64vw; }
-  .team-pill { width: 18vw; }
-  .strip-center { width: 20vw; }
+  .top-controls { height: auto; min-height: 86px; padding: 8px 66px 8px 8px; }
+  .btn-start-match { min-width: 200px; font-size: 21px; }
+  .btn-side { min-width: 150px; }
 }
 </style>
 </head>
@@ -317,23 +351,20 @@ select {
   <div class="bg-layer"></div>
 
   <div class="top-controls">
-    <div class="control-group">
-      <button class="b-start" onclick="timerStart()">Start</button>
-      <button class="b-pause" onclick="timerPause()">Pause</button>
-      <button class="b-reset" onclick="timerReset()">Reset</button>
+    <div class="control-center">
+      <button class="b-danger btn-side" onclick="resetBallCounts()">Reset Ball Count</button>
+      <button class="b-start btn-start-match" onclick="timerStart()">Start Match</button>
+      <button class="b-reset btn-side" onclick="timerReset()">Reset</button>
     </div>
-    <div class="control-group">
-      <button class="b-primary" onclick="togglePreviewsBtn()">Toggle Previews</button>
-      <button class="b-primary" onclick="openTeamModal()">Teams Settings</button>
-    </div>
+    <button class="b-primary settings-fab" onclick="openSettingsModal()" aria-label="Settings">⚙</button>
   </div>
 
   <div class="main-area">
-    <div class="upper-zone" id="upperZone">
+    <div class="upper-zone">
       <div class="team-pill red">
         <div class="team-numbers" id="redTeamsDisp">
-          <span id="red1">252</span>
-          <span id="red2">636</span>
+          <span id="red1">12560</span>
+          <span id="red2">12560</span>
         </div>
       </div>
 
@@ -343,19 +374,19 @@ select {
 
       <div class="team-pill blue">
         <div class="team-numbers" id="blueTeamsDisp">
-          <span id="blue1">6152</span>
-          <span id="blue2">15073</span>
+          <span id="blue1">12560</span>
+          <span id="blue2">12560</span>
         </div>
       </div>
     </div>
 
-    <div class="preview-cam-controls" id="previewCamControls">
+    <div class="preview-cam-controls">
       <select id="redCam" onchange="setCam('red')"><option value="none">Red Camera</option></select>
       <select id="blueCam" onchange="setCam('blue')"><option value="none">Blue Camera</option></select>
       <button class="b-reset" onclick="refreshCams(true)">Refresh Cameras</button>
     </div>
 
-    <div class="preview-row" id="previewRow">
+    <div class="preview-row">
       <div class="preview-panel"><img id="redStream" src="/stream/red" alt="Red"></div>
       <div class="preview-panel"><img id="blueStream" src="/stream/blue" alt="Blue"></div>
     </div>
@@ -370,15 +401,15 @@ select {
       <div class="side-label">
         <div class="side-name">Red</div>
         <div class="side-score" id="redBottom">0</div>
+        <div class="side-teams" id="redTeamsBottom">12560<br>12560</div>
       </div>
     </div>
 
     <div class="strip-center">
-      <div class="bot-icon">🤖</div>
-      <div class="motifs" id="motifCycle" onclick="cycleMotif()">
-        <div class="mot g" id="mot1"></div>
-        <div class="mot p" id="mot2"></div>
-        <div class="mot p" id="mot3"></div>
+      <div class="motifs" id="motifGroup">
+        <div class="mot g" id="mot1" onclick="setMotifGreen(0)"></div>
+        <div class="mot p" id="mot2" onclick="setMotifGreen(1)"></div>
+        <div class="mot p" id="mot3" onclick="setMotifGreen(2)"></div>
       </div>
     </div>
 
@@ -386,6 +417,7 @@ select {
       <div class="side-label">
         <div class="side-name">Blue</div>
         <div class="side-score" id="blueBottom">0</div>
+        <div class="side-teams" id="blueTeamsBottom">12560<br>12560</div>
       </div>
       <div class="pixel-cells">
         <div class="pixel-cell"></div>
@@ -395,91 +427,103 @@ select {
   </div>
 </div>
 
-<div class="modal-overlay" id="teamModal">
+<div class="modal-overlay" id="settingsModal">
   <div class="modal">
-    <h2>Teams Configuration</h2>
+    <h2>Settings</h2>
+
     <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
-      <input type="checkbox" id="showTeamsCheck"> Show Teams on Scoreboard
+      <input type="checkbox" id="flipLayoutCheck"> Blue on left
+    </label>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+      <input type="checkbox" id="showTeamsCheck" checked> Show teams
     </label>
 
     <div style="display:flex;gap:12px;">
       <div style="flex:1;">
         <label style="color:#ef5350;display:block;margin-bottom:4px;">Red Team 1</label>
-        <input type="text" id="inputRed1" value="252">
+        <input type="text" id="inputRed1" value="12560">
         <label style="color:#ef5350;display:block;margin-bottom:4px;">Red Team 2</label>
-        <input type="text" id="inputRed2" value="636">
+        <input type="text" id="inputRed2" value="12560">
       </div>
       <div style="flex:1;">
         <label style="color:#42a5f5;display:block;margin-bottom:4px;">Blue Team 1</label>
-        <input type="text" id="inputBlue1" value="6152">
+        <input type="text" id="inputBlue1" value="12560">
         <label style="color:#42a5f5;display:block;margin-bottom:4px;">Blue Team 2</label>
-        <input type="text" id="inputBlue2" value="15073">
+        <input type="text" id="inputBlue2" value="12560">
       </div>
     </div>
 
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="b-primary" style="flex:1;" onclick="togglePreviewsBtn()">Toggle Previews</button>
+      <button class="b-reset" style="flex:1;" onclick="timerPause()">Pause</button>
+    </div>
+
     <div class="modal-btns">
-      <button class="b-reset" onclick="closeTeamModal()">Cancel</button>
-      <button class="b-primary" onclick="saveTeamSettings()">Save</button>
+      <button class="b-reset" onclick="closeSettingsModal()">Cancel</button>
+      <button class="b-primary" onclick="saveSettings()">Save</button>
     </div>
   </div>
 </div>
 
 <script>
 let previewsVisible = false;
-let motifIndex = 0;
+let motifGreenIndex = 0;
 
-const motifPatterns = [
-  ['g', 'p', 'p'],
-  ['p', 'g', 'p'],
-  ['p', 'p', 'g']
-];
-
-function applyMotif() {
-  const pattern = motifPatterns[motifIndex];
-  document.getElementById('mot1').className = 'mot ' + pattern[0];
-  document.getElementById('mot2').className = 'mot ' + pattern[1];
-  document.getElementById('mot3').className = 'mot ' + pattern[2];
+function setMotifGreen(index) {
+  motifGreenIndex = index;
+  document.getElementById('mot1').className = 'mot ' + (motifGreenIndex === 0 ? 'g' : 'p');
+  document.getElementById('mot2').className = 'mot ' + (motifGreenIndex === 1 ? 'g' : 'p');
+  document.getElementById('mot3').className = 'mot ' + (motifGreenIndex === 2 ? 'g' : 'p');
 }
 
-function cycleMotif() {
-  motifIndex = (motifIndex + 1) % motifPatterns.length;
-  applyMotif();
+function openSettingsModal() {
+  document.getElementById('settingsModal').classList.add('open');
 }
 
-function togglePreviewsBtn() {
-  previewsVisible = !previewsVisible;
-  document.getElementById('scoreboard').classList.toggle('preview-on', previewsVisible);
-  if (previewsVisible) {
-    refreshCams();
-    document.getElementById('redStream').src = '/stream/red?t=' + Date.now();
-    document.getElementById('blueStream').src = '/stream/blue?t=' + Date.now();
-  }
+function closeSettingsModal() {
+  document.getElementById('settingsModal').classList.remove('open');
 }
 
-function openTeamModal() {
-  document.getElementById('teamModal').classList.add('open');
+function applyTeamsVisibility(show) {
+  document.getElementById('redTeamsDisp').style.display = show ? 'flex' : 'none';
+  document.getElementById('blueTeamsDisp').style.display = show ? 'flex' : 'none';
+  document.getElementById('redTeamsBottom').style.display = show ? 'block' : 'none';
+  document.getElementById('blueTeamsBottom').style.display = show ? 'block' : 'none';
 }
 
-function closeTeamModal() {
-  document.getElementById('teamModal').classList.remove('open');
-}
-
-function saveTeamSettings() {
+function saveSettings() {
   const show = document.getElementById('showTeamsCheck').checked;
-  const r1 = document.getElementById('inputRed1').value.trim() || '0000';
-  const r2 = document.getElementById('inputRed2').value.trim() || '0000';
-  const b1 = document.getElementById('inputBlue1').value.trim() || '0000';
-  const b2 = document.getElementById('inputBlue2').value.trim() || '0000';
+  const flip = document.getElementById('flipLayoutCheck').checked;
+
+  const r1 = document.getElementById('inputRed1').value.trim() || '12560';
+  const r2 = document.getElementById('inputRed2').value.trim() || '12560';
+  const b1 = document.getElementById('inputBlue1').value.trim() || '12560';
+  const b2 = document.getElementById('inputBlue2').value.trim() || '12560';
 
   document.getElementById('red1').textContent = r1;
   document.getElementById('red2').textContent = r2;
   document.getElementById('blue1').textContent = b1;
   document.getElementById('blue2').textContent = b2;
 
-  document.getElementById('redTeamsDisp').classList.toggle('visible', show);
-  document.getElementById('blueTeamsDisp').classList.toggle('visible', show);
+  document.getElementById('redTeamsBottom').innerHTML = r1 + '<br>' + r2;
+  document.getElementById('blueTeamsBottom').innerHTML = b1 + '<br>' + b2;
 
-  closeTeamModal();
+  document.getElementById('scoreboard').classList.toggle('blue-left', flip);
+  applyTeamsVisibility(show);
+
+  closeSettingsModal();
+}
+
+function togglePreviewsBtn() {
+  previewsVisible = !previewsVisible;
+  document.getElementById('scoreboard').classList.toggle('preview-on', previewsVisible);
+
+  if (previewsVisible) {
+    refreshCams();
+    document.getElementById('redStream').src = '/stream/red?t=' + Date.now();
+    document.getElementById('blueStream').src = '/stream/blue?t=' + Date.now();
+  }
 }
 
 function post(url, body) {
@@ -494,9 +538,13 @@ function timerStart() { post('/api/timer/start'); }
 function timerPause() { post('/api/timer/pause'); }
 function timerReset() { post('/api/timer/reset'); }
 
+function resetBallCounts() {
+  post('/api/score/adjust', { side: 'red', action: 'clear' });
+  post('/api/score/adjust', { side: 'blue', action: 'clear' });
+}
+
 function setCam(side) {
-  const selectId = side === 'blue' ? 'blueCam' : 'redCam';
-  const sel = document.getElementById(selectId);
+  const sel = document.getElementById(side === 'blue' ? 'blueCam' : 'redCam');
   post('/api/camera/' + side, { src: sel.value }).then(() => {
     const img = document.getElementById(side + 'Stream');
     if (img) img.src = '/stream/' + side + '?t=' + Date.now();
@@ -509,19 +557,19 @@ function refreshCams(forceRefresh) {
     .then(r => r.json())
     .then(data => {
       const cams = data.cameras || [];
-      const blueSelect = document.getElementById('blueCam');
-      const redSelect = document.getElementById('redCam');
+      const redSel = document.getElementById('redCam');
+      const blueSel = document.getElementById('blueCam');
 
-      const blueCurrent = data.blue_src !== undefined ? String(data.blue_src) : 'none';
       const redCurrent = data.red_src !== undefined ? String(data.red_src) : 'none';
+      const blueCurrent = data.blue_src !== undefined ? String(data.blue_src) : 'none';
 
-      [['blue', blueSelect, blueCurrent], ['red', redSelect, redCurrent]].forEach(([side, sel, current]) => {
-        sel.innerHTML = '<option value="none">' + (side === 'blue' ? 'Blue' : 'Red') + ' Camera</option>';
+      [['red', redSel, redCurrent], ['blue', blueSel, blueCurrent]].forEach(([side, sel, current]) => {
+        sel.innerHTML = '<option value="none">' + (side === 'red' ? 'Red' : 'Blue') + ' Camera</option>';
         cams.forEach(c => {
-          const option = document.createElement('option');
-          option.value = c.id;
-          option.textContent = c.name;
-          sel.appendChild(option);
+          const o = document.createElement('option');
+          o.value = c.id;
+          o.textContent = c.name;
+          sel.appendChild(o);
         });
         if ([...sel.options].some(o => String(o.value) === current)) {
           sel.value = current;
@@ -534,31 +582,29 @@ function refreshCams(forceRefresh) {
 function monitorStream(id, url) {
   const img = document.getElementById(id);
   img.onerror = function () {
-    setTimeout(() => {
-      img.src = url + '?t=' + Date.now();
-    }, 1500);
+    setTimeout(() => { img.src = url + '?t=' + Date.now(); }, 1500);
   };
 }
 
 const es = new EventSource('/events');
 es.onmessage = function (e) {
   const d = JSON.parse(e.data);
-
   document.getElementById('redBottom').textContent = d.red_hw;
   document.getElementById('blueBottom').textContent = d.blue_hw;
 
   const m = Math.floor(d.timer_seconds / 60);
   const s = d.timer_seconds % 60;
-  const timeText = m + ':' + String(s).padStart(2, '0');
+  const t = m + ':' + String(s).padStart(2, '0');
 
   const timer = document.getElementById('timer');
-  timer.textContent = timeText;
+  timer.textContent = t;
   timer.classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
 };
 
 monitorStream('redStream', '/stream/red');
 monitorStream('blueStream', '/stream/blue');
-applyMotif();
+setMotifGreen(0);
+applyTeamsVisibility(true);
 </script>
 </body>
 </html>
