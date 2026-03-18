@@ -3,344 +3,369 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DECODE Goal Scorer</title>
+<title>FTC Goal Scorer</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;background:#0f0f23;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;background:#000;color:#fff;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
-/* ── Top bar ───────────────────────────────────── */
-.top{display:flex;align-items:center;gap:12px;padding:8px 16px;background:#1a1a2e;border-bottom:1px solid #333;flex-wrap:wrap}
-.top h1{font-size:16px;color:#ffd740;white-space:nowrap}
-.spacer{flex:1}
-.timer{font-size:42px;font-weight:bold;color:#ffd740;font-variant-numeric:tabular-nums;min-width:120px;text-align:center;background:#0f0f23;border:2px groove #555;border-radius:8px;padding:2px 14px;line-height:1.15}
-.timer.danger{color:#ff1744}
-button{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .15s}
+/* Background image can be set on .scoreboard */
+.scoreboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: url('/static/bg.jpg') center/cover no-repeat; /* Example if you have a bg */
+}
+
+/* TOP ROW */
+.top-row {
+  display: flex;
+  height: 60vh;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4vw;
+}
+
+.alliance-huge {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 1vw 2vw;
+  box-shadow: 0px 4px 15px rgba(0,0,0,0.6);
+}
+.alliance-huge.red { background: #d32f2f; margin-right: -2vw; z-index: 1;}
+.alliance-huge.blue { background: #1976d2; margin-left: -2vw; z-index: 1;}
+
+.team-numbers {
+  display: none;
+  font-size: 3vw;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 2px;
+}
+.team-numbers.visible { display: flex; flex-direction: column; align-items: center; }
+
+.huge-score {
+  font-size: 15vw;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* TIMER */
+.huge-timer-box {
+  background: #fff;
+  color: #000;
+  font-size: 20vw;
+  font-weight: 800;
+  padding: 2vw 4vw;
+  z-index: 10;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  font-variant-numeric: tabular-nums;
+  line-height: 0.9;
+  text-align: center;
+}
+.huge-timer-box.danger { color: #d32f2f; }
+
+/* BOTTOM ROW (LOWER THIRDS) */
+.bottom-thirds {
+  display: flex;
+  height: 15vh;
+  background: #fff;
+  border-top: 4px solid #fff;
+}
+.third {
+  display: flex;
+  align-items: center;
+}
+.third.logos { flex: 0.5; background: #fff; justify-content: center; }
+.third.red-info { flex: 1; background: #9c0000; color: #fff; }
+.third.blue-info { flex: 1; background: #004c99; color: #fff; }
+.third.center-info { flex: 0.5; background: #fff; color: #000; flex-direction: column; justify-content: center; font-weight: 800; font-size: 2vw;}
+
+.bottom-box {
+  background: #fff;
+  color: #000;
+  height: 80%;
+  margin: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  font-size: 2.5vw;
+  font-weight: bold;
+}
+.icon-p { font-size: 3vw; margin-right: 15px; }
+
+/* STUFF */
+.timer-sm { font-size: 4vw; border: 2px solid #000; padding: 0 1vw; border-radius: 5px; cursor: pointer; }
+.motifs { display: flex; gap: 5px; margin-top: 5px;}
+.mot { width: 1.5vw; height: 1.5vw; border-radius: 50%; opacity: 0.5; cursor: pointer;}
+.mot.g { background: #4caf50; opacity: 1; }
+.mot.p { background: #9c27b0; opacity: 1; }
+.mot.w { background: #fff; border: 1px solid #ccc; opacity: 1; }
+
+/* Control area hidden / toggled */
+.controls-bottom {
+  background: #1a1a2e;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #333;
+}
+.control-group { display: flex; gap: 8px; align-items: center; }
+
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;transition:opacity .15s}
 button:hover{opacity:.85}
 button:active{opacity:.7}
 .b-start{background:#4caf50;color:#fff}
 .b-pause{background:#ff9800;color:#fff}
 .b-reset{background:#616161;color:#fff}
 .b-danger{background:#e53935;color:#fff}
-.b-blue{background:#42a5f5;color:#fff}
-.b-red{background:#ef5350;color:#fff}
-.b-sm{padding:5px 10px;font-size:12px}
+.b-primary{background:#7c4dff;color:#fff}
+.b-sm{padding:6px 12px;font-size:12px}
 
-/* ── Main panels ───────────────────────────────── */
-.main{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;flex:1;min-height:0}
-.panel{background:#1a1a2e;border-radius:10px;overflow:hidden;border:2px solid #333;display:flex;flex-direction:column}
-.panel.blue{border-color:#42a5f5}
-.panel.red{border-color:#ef5350}
-.panel-hdr{text-align:center;padding:5px;font-weight:bold;font-size:13px;letter-spacing:2px}
-.panel.blue .panel-hdr{background:#42a5f522;color:#42a5f5}
-.panel.red  .panel-hdr{background:#ef535022;color:#ef5350}
-.vid{position:relative;background:#000;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.vid img{width:100%;height:100%;object-fit:fill}
-.score-area{text-align:center;padding:6px 0}
-.score{font-size:64px;font-weight:bold;line-height:1}
-.panel.blue .score{color:#42a5f5}
-.panel.red  .score{color:#ef5350}
-.score-info{font-size:12px;opacity:.65;margin-top:2px}
-.score-btns{display:flex;gap:6px;justify-content:center;padding:6px 0 8px}
-
-/* ── Camera controls ───────────────────────────── */
-.cam-bar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:#151528;border-top:1px solid #222;font-size:12px;flex-wrap:wrap}
-.cam-bar label{font-weight:600}
-.cam-bar select{padding:4px 8px;border-radius:4px;border:1px solid #555;background:#1a1a2e;color:#e0e0e0;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:border-color .15s}
-.cam-bar select:focus{border-color:#42a5f5;outline:none}
-.cam-bar select:disabled{opacity:.5;cursor:wait}
-.cam-bar .b-ip{background:#7c4dff;color:#fff}
-
-/* ── IP Camera Modal ────────────────────────────── */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center}
-.modal-overlay.open{display:flex}
-.modal{background:#1a1a2e;border:1px solid #555;border-radius:12px;padding:24px 28px;min-width:340px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
-.modal h2{margin:0 0 14px;font-size:16px;color:#ffd740}
-.modal label{display:block;font-size:13px;margin-bottom:6px;color:#ccc}
-.modal input{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #555;background:#0f0f23;color:#e0e0e0;font-size:14px;margin-bottom:14px}
-.modal input:focus{border-color:#7c4dff;outline:none}
-.modal .modal-btns{display:flex;gap:8px;justify-content:flex-end}
-.modal .modal-status{font-size:12px;min-height:18px;margin-bottom:10px}
-.modal .modal-status.ok{color:#4caf50}
-.modal .modal-status.err{color:#e53935}
-.modal .modal-status.wait{color:#ff9800}
-
-/* ── Status bar ────────────────────────────────── */
-.status-bar{display:flex;align-items:center;gap:8px;padding:5px 16px;background:#1a1a2e;border-top:1px solid #333;font-size:11px}
-.dot{width:9px;height:9px;border-radius:50%;background:gray;flex-shrink:0}
-.dot.ok{background:#4caf50}
-.dot.err{background:#e53935}
-.status-txt{flex:1;color:gray}
-.fps-txt{color:gray;white-space:nowrap}
-
-@media(max-width:700px){
-  .main{grid-template-columns:1fr}
-  .timer{font-size:32px;min-width:90px}
+.vid-container {
+  display: none;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-top: 4px solid #000;
 }
+.vid-container.visible { display: flex; }
+.vid-container img { width: 100%; height: 100%; object-fit: contain; }
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#1a1a2e;border:1px solid #555;border-radius:12px;padding:24px;min-width:320px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.8)}
+.modal h2{margin:0 0 16px;font-size:18px;color:#fff}
+.modal label{display:block;font-size:13px;margin-bottom:6px;color:#ccc}
+.modal input{width:100%;padding:10px;border-radius:6px;border:1px solid #555;background:#0f0f23;color:#e0e0e0;font-size:14px;margin-bottom:14px}
+.modal input[type="checkbox"] { width: auto; margin-right: 8px; }
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;}
 </style>
 </head>
 <body>
 
-<!-- Top bar -->
-<div class="top">
-  <h1>DECODE Goal Scorer</h1>
-  <div class="spacer"></div>
-  <div class="timer" id="timer">2:30</div>
-  <button class="b-start" id="btnStart" onclick="timerStart()">Start</button>
-  <button class="b-pause" onclick="timerPause()">Pause</button>
-  <button class="b-reset b-sm" onclick="timerReset()">Reset Timer</button>
-  <button class="b-danger b-sm" onclick="resetAll()">Reset All</button>
-</div>
+<div class="scoreboard">
 
-<!-- Main area -->
-<div class="main">
-  <!-- Blue -->
-  <div class="panel blue">
-    <div class="panel-hdr">BLUE GOAL</div>
-    <div class="vid"><img id="blueStream" src="/stream/blue" alt="Blue"></div>
-    <div class="score-area">
-      <div class="score" id="blueScore">0</div>
-      <div class="score-info" id="blueInfo">balls scored &nbsp;|&nbsp; live: 0</div>
+  <!-- PREVIEWS (hidden by default) -->
+  <div style="display:flex; flex:1; height: 0;" id="previewRow">
+    <div class="vid-container" id="redVid"><img id="redStream" src="/stream/red" alt="Red"></div>
+    <div class="vid-container" id="blueVid"><img id="blueStream" src="/stream/blue" alt="Blue"></div>
+  </div>
+
+  <div class="top-row" id="topRow">
+    <!-- Red Team -->
+    <div class="alliance-huge red">
+      <div class="team-numbers" id="redTeamsDisp">
+        <span id="red1">252</span>
+        <span id="red2">636</span>
+      </div>
+      <div class="huge-score" id="redScore">0</div>
+      <div style="margin-top:10px;">
+        <button class="b-reset b-sm" onclick="adj('red','minus')">-1</button>
+        <button class="b-reset b-sm" onclick="adj('red','plus')">+1</button>
+      </div>
     </div>
-    <div class="score-btns">
-      <button class="b-blue b-sm" onclick="adj('blue','plus')">+1</button>
-      <button class="b-blue b-sm" onclick="adj('blue','minus')">-1</button>
-      <button class="b-reset b-sm" onclick="adj('blue','clear')">Clear</button>
+    
+    <div class="huge-timer-box" id="timer">2:30</div>
+
+    <!-- Blue Team -->
+    <div class="alliance-huge blue">
+      <div class="huge-score" id="blueScore">0</div>
+      <div class="team-numbers" id="blueTeamsDisp">
+        <span id="blue1">6152</span>
+        <span id="blue2">15073</span>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="b-reset b-sm" onclick="adj('blue','minus')">-1</button>
+        <button class="b-reset b-sm" onclick="adj('blue','plus')">+1</button>
+      </div>
     </div>
   </div>
-  <!-- Red -->
-  <div class="panel red">
-    <div class="panel-hdr">RED GOAL</div>
-    <div class="vid"><img id="redStream" src="/stream/red" alt="Red"></div>
-    <div class="score-area">
-      <div class="score" id="redScore">0</div>
-      <div class="score-info" id="redInfo">balls scored &nbsp;|&nbsp; live: 0</div>
+
+  <div class="bottom-thirds">
+    <div class="third logos">
+      <h2 style="color:#000; font-style:italic">FIRST</h2>
     </div>
-    <div class="score-btns">
-      <button class="b-red b-sm" onclick="adj('red','plus')">+1</button>
-      <button class="b-red b-sm" onclick="adj('red','minus')">-1</button>
-      <button class="b-reset b-sm" onclick="adj('red','clear')">Clear</button>
+    <div class="third red-info">
+      <div style="display:flex;align-items:center;flex:1;justify-content:center;gap:15px;">
+        <span class="icon-p">→</span>
+        <div class="bottom-box">
+          <span style="color:gray;">/36</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <span style="font-size:1.5vw;">Red</span>
+          <span style="font-size:3.5vw;font-weight:bold" id="redBottom">0</span>
+        </div>
+      </div>
+    </div>
+    <div class="third center-info">
+      <div>🤖</div>
+      <div class="timer-sm" id="timerSmall">2:30</div>
+      <div class="motifs" onclick="toggleMotif(event)">
+        <div class="mot g"></div>
+        <div class="mot p"></div>
+        <div class="mot p"></div>
+      </div>
+    </div>
+    <div class="third blue-info">
+      <div style="display:flex;align-items:center;flex:1;justify-content:center;gap:15px;">
+        <div style="display:flex;flex-direction:column;align-items:center;">
+          <span style="font-size:1.5vw;">Blue</span>
+          <span style="font-size:3.5vw;font-weight:bold" id="blueBottom">0</span>
+        </div>
+        <div class="bottom-box">
+          <span class="icon-p">→</span>
+          <span style="color:gray;">/36</span>
+        </div>
+      </div>
+    </div>
+    <div class="third logos">
+      <h2 style="color:#000; font-style:italic">DECODE</h2>
     </div>
   </div>
 </div>
 
-<!-- Camera selector -->
-<div class="cam-bar">
-  <label style="color:#42a5f5">Blue Cam:</label>
-  <select id="blueCam" onchange="setCam('blue')"><option value="none">None</option></select>
-  <label style="color:#ef5350;margin-left:12px">Red Cam:</label>
-  <select id="redCam" onchange="setCam('red')"><option value="none">None</option></select>
-  <button class="b-ip b-sm" onclick="openIpModal()">Add IP Camera</button>
-  <button class="b-reset b-sm" onclick="refreshCams(true)">Refresh Cameras</button>
+<div class="controls-bottom">
+  <div class="control-group">
+    <button class="b-start" onclick="timerStart()">Start</button>
+    <button class="b-pause" onclick="timerPause()">Pause</button>
+    <button class="b-reset" onclick="timerReset()">Reset Timer</button>
+    <button class="b-danger" onclick="resetAll()">Reset Match</button>
+  </div>
+  <div class="control-group">
+    <button class="b-primary" onclick="togglePreviewsBtn()">Toggle Previews</button>
+    <button class="b-primary" onclick="openTeamModal()">Teams Settings</button>
+  </div>
 </div>
 
-<!-- Status -->
-<div class="status-bar">
-  <div class="dot" id="dot"></div>
-  <span class="status-txt" id="statusTxt">Connecting…</span>
-  <span class="fps-txt" id="fpsTxt"></span>
-</div>
-
-<!-- Hidden audio for FTC timer (plays on CLIENT) -->
-<audio id="timerAudio" preload="auto">
-  <source src="/static/ftctimer.mp3" type="audio/mpeg">
-</audio>
-
-<!-- IP Camera Modal -->
-<div class="modal-overlay" id="ipModal">
+<!-- Team Settings Modal -->
+<div class="modal-overlay" id="teamModal">
   <div class="modal">
-    <h2>Add IP Camera</h2>
-    <label for="ipInput">IP Address &amp; Port (e.g. 192.168.0.100:4747)</label>
-    <input type="text" id="ipInput" placeholder="192.168.0.100:4747" autocomplete="off" spellcheck="false">
-    <div class="modal-status" id="ipStatus"></div>
+    <h2>Teams Configuration</h2>
+    <label style="display:flex;align-items:center;cursor:pointer;">
+      <input type="checkbox" id="showTeamsCheck"> Show Teams on Scoreboard
+    </label>
+    <div style="margin-top:15px;display:flex;gap:15px">
+      <div style="flex:1">
+        <label style="color:#ef5350">Red Team 1</label>
+        <input type="text" id="inputRed1" value="252">
+        <label style="color:#ef5350">Red Team 2</label>
+        <input type="text" id="inputRed2" value="636">
+      </div>
+      <div style="flex:1">
+        <label style="color:#42a5f5">Blue Team 1</label>
+        <input type="text" id="inputBlue1" value="6152">
+        <label style="color:#42a5f5">Blue Team 2</label>
+        <input type="text" id="inputBlue2" value="15073">
+      </div>
+    </div>
     <div class="modal-btns">
-      <button class="b-reset b-sm" onclick="closeIpModal()">Cancel</button>
-      <button class="b-ip b-sm" id="ipTestBtn" onclick="testIpCamera()">Test &amp; Add</button>
+      <button class="b-reset" onclick="closeTeamModal()">Cancel</button>
+      <button class="b-primary" onclick="saveTeamSettings()">Save</button>
     </div>
   </div>
 </div>
 
 <script>
-const audio = document.getElementById('timerAudio');
-let lastAudioSeq = 0;
-let audioUnlocked = false;
+let previewsVisible = false;
 
-/* ── SSE: real-time state from server ─────────── */
+// Motifs sequence
+const motifs = ['g', 'p', 'w'];
+let mStates = [0, 1, 1]; // g, p, p
+
+function toggleMotif(e) {
+  if (e.target.classList.contains('mot')) {
+    const parent = e.target.parentElement;
+    const index = Array.from(parent.children).indexOf(e.target);
+    mStates[index] = (mStates[index] + 1) % motifs.length;
+    e.target.className = 'mot ' + motifs[mStates[index]];
+  }
+}
+
+function togglePreviewsBtn() {
+  previewsVisible = !previewsVisible;
+  const rv = document.getElementById('redVid');
+  const bv = document.getElementById('blueVid');
+  const topRow = document.getElementById('topRow');
+  const timer = document.getElementById('timer');
+  const pr = document.getElementById('previewRow');
+
+  if (previewsVisible) {
+    rv.classList.add('visible');
+    bv.classList.add('visible');
+    topRow.style.height = '15vh';
+    timer.style.padding = '0.5vw 2vw';
+    timer.style.fontSize = '8vw';
+    pr.style.height = 'auto';
+  } else {
+    rv.classList.remove('visible');
+    bv.classList.remove('visible');
+    topRow.style.height = '60vh';
+    timer.style.padding = '2vw 4vw';
+    timer.style.fontSize = '20vw';
+    pr.style.height = '0';
+  }
+}
+
+function openTeamModal() { document.getElementById('teamModal').classList.add('open'); }
+function closeTeamModal() { document.getElementById('teamModal').classList.remove('open'); }
+function saveTeamSettings() {
+  const show = document.getElementById('showTeamsCheck').checked;
+  const r1 = document.getElementById('inputRed1').value;
+  const r2 = document.getElementById('inputRed2').value;
+  const b1 = document.getElementById('inputBlue1').value;
+  const b2 = document.getElementById('inputBlue2').value;
+  
+  document.getElementById('red1').textContent = r1;
+  document.getElementById('red2').textContent = r2;
+  document.getElementById('blue1').textContent = b1;
+  document.getElementById('blue2').textContent = b2;
+  
+  if (show) {
+    document.getElementById('redTeamsDisp').classList.add('visible');
+    document.getElementById('blueTeamsDisp').classList.add('visible');
+  } else {
+    document.getElementById('redTeamsDisp').classList.remove('visible');
+    document.getElementById('blueTeamsDisp').classList.remove('visible');
+  }
+  closeTeamModal();
+}
+
 const es = new EventSource('/events');
 es.onmessage = function(e) {
   const d = JSON.parse(e.data);
-
-  // Scores
   document.getElementById('blueScore').textContent = d.blue_hw;
   document.getElementById('redScore').textContent  = d.red_hw;
-  document.getElementById('blueInfo').innerHTML =
-    'balls scored &nbsp;|&nbsp; live: ' + d.blue_live;
-  document.getElementById('redInfo').innerHTML =
-    'balls scored &nbsp;|&nbsp; live: ' + d.red_live;
+  document.getElementById('blueBottom').textContent = d.blue_hw;
+  document.getElementById('redBottom').textContent  = d.red_hw;
 
-  // Timer
   const m = Math.floor(d.timer_seconds / 60);
   const s = d.timer_seconds % 60;
-  const tEl = document.getElementById('timer');
-  tEl.textContent = m + ':' + String(s).padStart(2, '0');
-  tEl.classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
-
-  // Status
-  const dot = document.getElementById('dot');
-  dot.className = 'dot ' + (d.status_ok ? 'ok' : 'err');
-  document.getElementById('statusTxt').textContent = d.status;
-  document.getElementById('fpsTxt').textContent =
-    'Inference: ' + d.infer_fps + ' FPS  [' + d.device.toUpperCase() + ']';
-
-  // Audio commands (sequence-based so we never double-fire)
-  if (d.audio_seq > lastAudioSeq) {
-    lastAudioSeq = d.audio_seq;
-    handleAudio(d.audio_cmd);
-  }
-};
-es.onerror = function() {
-  document.getElementById('dot').className = 'dot err';
-  document.getElementById('statusTxt').textContent = 'Connection lost — retrying…';
+  const tStr = m + ':' + String(s).padStart(2, '0');
+  document.getElementById('timer').textContent = tStr;
+  document.getElementById('timerSmall').textContent = tStr;
+  document.getElementById('timer').classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
 };
 
-/* ── Audio management ─────────────────────────── */
-function handleAudio(cmd) {
-  if (!cmd) return;
-  switch (cmd) {
-    case 'play':  audio.currentTime = 0; audio.play().catch(()=>{}); break;
-    case 'pause': audio.pause(); break;
-    case 'resume': audio.play().catch(()=>{}); break;
-    case 'stop':  audio.pause(); audio.currentTime = 0; break;
-  }
-}
-
-/* Unlock audio on first user gesture (browser autoplay policy) */
-function unlockAudio() {
-  if (audioUnlocked) return;
-  const p = audio.play();
-  if (p) p.then(()=>{ audio.pause(); audio.currentTime=0; audioUnlocked=true; }).catch(()=>{});
-}
-
-/* ── API helpers ──────────────────────────────── */
-function post(url, body) {
-  unlockAudio();
-  return fetch(url, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body || {})
-  });
-}
-
+function post(url, body) { return fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) }); }
 function timerStart() { post('/api/timer/start'); }
 function timerPause() { post('/api/timer/pause'); }
 function timerReset() { post('/api/timer/reset'); }
 function resetAll()   { post('/api/reset'); }
 function adj(side, action) { post('/api/score/adjust', {side, action}); }
-
-function setCam(side) {
-  const sel = document.getElementById(side==='blue'?'blueCam':'redCam');
-  post('/api/camera/' + side, {src: sel.value}).then(() => {
-    const img = document.getElementById(side + 'Stream');
-    if (img) {
-      img.src = '/stream/' + side + '?t=' + new Date().getTime();
-    }
-  });
-}
-
-function refreshCams(forceRefresh) {
-  const blueS = document.getElementById('blueCam');
-  const redS = document.getElementById('redCam');
-  blueS.disabled = true; redS.disabled = true;
-  const refreshBtn = document.querySelector('button[onclick="refreshCams(true)"]');
-  if (refreshBtn) refreshBtn.textContent = 'Scanning...';
-  const url = forceRefresh ? '/api/cameras?refresh=1' : '/api/cameras';
-  fetch(url).then(r=>r.json()).then(data => {
-    // If the server returns a dict with 'cameras', use it, otherwise assume it's just the array
-    const cams = data.cameras || data;
-    const blueStart = data.blue_src !== undefined ? String(data.blue_src) : "none";
-    const redStart = data.red_src !== undefined ? String(data.red_src) : "none";
-    
-    ['blue','red'].forEach(side => {
-      const sel = side==='blue' ? blueS : redS;
-      const initialSelected = side==='blue' ? blueStart : redStart;
-      const cur = sel.value === "none" && initialSelected !== "none" ? initialSelected : sel.value;
-      sel.innerHTML = '<option value="none">None</option>';
-      cams.forEach(c => {
-        const o = document.createElement('option');
-        o.value = c.id;
-        o.textContent = c.name.length > 35 ? c.name.slice(0,32) + '…' : c.name;
-        o.title = c.name;
-        sel.appendChild(o);
-      });
-      if ([...sel.options].some(o => o.value == cur)) sel.value = cur;
-      sel.disabled = false;
-    });
-    if (refreshBtn) refreshBtn.textContent = 'Refresh Cameras';
-  }).catch((err) => { 
-    console.error('Failed to refresh cameras:', err);
-    blueS.disabled = false; redS.disabled = false;
-    if (refreshBtn) refreshBtn.textContent = 'Refresh Cameras';
-  });
-}
-
-/* Reconnect MJPEG streams on error */
-function monitorStream(id, url) {
-  const img = document.getElementById(id);
-  img.onerror = function() {
-    setTimeout(()=>{ img.src = url + '?t=' + Date.now(); }, 2000);
-  };
-}
-monitorStream('blueStream', '/stream/blue');
-monitorStream('redStream',  '/stream/red');
-
-// Load camera list on page load
-refreshCams();
-
-/* ── IP Camera Modal ───────────────────────── */
-function openIpModal() {
-  document.getElementById('ipModal').classList.add('open');
-  document.getElementById('ipInput').value = '';
-  setIpStatus('', '');
-  document.getElementById('ipInput').focus();
-}
-function closeIpModal() {
-  document.getElementById('ipModal').classList.remove('open');
-}
-function setIpStatus(msg, cls) {
-  const el = document.getElementById('ipStatus');
-  el.textContent = msg;
-  el.className = 'modal-status' + (cls ? ' ' + cls : '');
-}
-function testIpCamera() {
-  const ip = document.getElementById('ipInput').value.trim();
-  if (!ip) { setIpStatus('Please enter an IP address.', 'err'); return; }
-  setIpStatus('Testing connection…', 'wait');
-  document.getElementById('ipTestBtn').disabled = true;
-  fetch('/api/camera/test_ip', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ip: ip})
-  }).then(r => r.json()).then(d => {
-    document.getElementById('ipTestBtn').disabled = false;
-    if (d.ok) {
-      setIpStatus('Camera found! Added to list.', 'ok');
-      refreshCams();
-      setTimeout(closeIpModal, 1200);
-    } else {
-      setIpStatus(d.error || 'Could not reach camera.', 'err');
-    }
-  }).catch(() => {
-    document.getElementById('ipTestBtn').disabled = false;
-    setIpStatus('Network error — check server.', 'err');
-  });
-}
-// Allow Enter key in IP input
-document.getElementById('ipInput').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') testIpCamera();
-});
-// Close modal on overlay click
-document.getElementById('ipModal').addEventListener('click', function(e) {
-  if (e.target === this) closeIpModal();
-});
 </script>
 </body>
 </html>

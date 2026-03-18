@@ -1,6 +1,6 @@
 """
-DECODE Goal Scorer — Web Server
-════════════════════════════════════════════════════════════════════
+DECODE Goal Scorer â€” Web Server
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 Flask-based dual-camera ball counting system.
 Streams MJPEG video, sends real-time scores via SSE, and exposes
 REST API for match control. Optimised for Intel CPU (Dell Optiplex).
@@ -26,6 +26,9 @@ from collections import OrderedDict
 os.environ["PYTHONWARNINGS"] = "ignore::RuntimeWarning"
 os.environ["OMP_NUM_THREADS"] = str(multiprocessing.cpu_count())
 os.environ["USE_NNPACK"] = "0"
+if sys.platform == "win32":
+    os.environ["OPENCV_VIDEOIO_PRIORITY_LIST"] = "DSHOW,MSMF"
+
 # Let OpenCV auto-select the best video backend per platform
 if sys.platform == "darwin":
     os.environ["OPENCV_VIDEOIO_PRIORITY_LIST"] = "AVFOUNDATION,FFMPEG"
@@ -36,7 +39,7 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-7s  %(message)s",
 )
 
-# ── Auto-install dependencies ────────────────────────────────────────────────
+# â”€â”€ Auto-install dependencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _install_deps():
     pkgs = {
         "opencv-python": "cv2",
@@ -68,7 +71,7 @@ torch.set_num_threads(multiprocessing.cpu_count())
 cv2.setUseOptimized(True)
 cv2.setNumThreads(multiprocessing.cpu_count())
 
-# ── Device detection ──────────────────────────────────────────────────────────
+# â”€â”€ Device detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _detect_device():
     if torch.cuda.is_available():
         name = torch.cuda.get_device_name(0)
@@ -77,14 +80,14 @@ def _detect_device():
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         logging.info("Apple Silicon GPU detected (MPS)")
         return "mps"
-    logging.info("No GPU — using CPU")
+    logging.info("No GPU â€” using CPU")
     return "cpu"
 
 DEVICE = _detect_device()
 USE_HALF = DEVICE in ("cuda",)  # MPS half is flaky on some models; CUDA only
 logging.info(f"Inference device: {DEVICE}  |  FP16: {USE_HALF}")
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PURPLE_LOW  = np.array([115, 90, 90])
 PURPLE_HIGH = np.array([155, 255, 255])
 # Lower saturation & value for green to catch extreme motion blur fading
@@ -106,9 +109,9 @@ CONFIRM_FRAMES  = 2
 STREAM_QUALITY  = 70   # JPEG quality for MJPEG stream
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Centroid Tracker
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class CentroidTracker:
     def __init__(self, max_disappeared=15, max_dist=200):
         self.next_id = 0
@@ -188,9 +191,9 @@ class CentroidTracker:
 # exhausting USB bandwidth before MJPEG format is set.
 camera_connect_lock = threading.Lock()
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Camera Thread  (always grabs the freshest frame)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class CameraThread:
     def __init__(self):
         self.cap = None
@@ -383,7 +386,7 @@ class CameraThread:
             # Use a generous timeout so the thread can finish any in-progress
             # cap.read() / connect() call and release the device fd before we
             # return.  The old 0.1 s was far too short: connect() alone can
-            # take up to ~1.2 s (8 × 0.15 s probe loop), so the thread would
+            # take up to ~1.2 s (8 Ã— 0.15 s probe loop), so the thread would
             # still hold the camera fd when the caller tried to reopen it.
             self._thread.join(timeout=3.0)
             self._thread = None
@@ -394,9 +397,9 @@ class CameraThread:
             except queue.Empty: pass
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Ball Detector  (YOLOv8 + HSV hybrid)
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class BallDetector:
     def __init__(self):
         self.yolo = None
@@ -424,7 +427,7 @@ class BallDetector:
             logging.error(f"YOLOv8 load error: {e}")
             self.ready = False
             if callback:
-                callback(False, f"YOLO failed — HSV only ({e})")
+                callback(False, f"YOLO failed â€” HSV only ({e})")
 
     def _yolo_detect(self, frame):
         if not self.ready:
@@ -508,7 +511,7 @@ class BallDetector:
                 x2 = min(d["x"] + r, w)
                 y2 = min(d["y"] + r, h)
                 if self._is_red_hue(hsv[y1:y2, x1:x2]):
-                    continue  # skip — likely goal frame artefact
+                    continue  # skip â€” likely goal frame artefact
                 filtered.append(d)
             hsv_dets = filtered
 
@@ -529,15 +532,15 @@ class BallDetector:
         return dets
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Flask Application
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__,
             static_folder=os.path.join(BASE_DIR, "static"),
             template_folder=os.path.join(BASE_DIR, "templates"))
 
-# ── Global objects ────────────────────────────────────────────────────────────
+# â”€â”€ Global objects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 blue_cam = CameraThread()
 red_cam  = CameraThread()
 blue_tracker = CentroidTracker()
@@ -551,7 +554,7 @@ state = {
     "timer_seconds": 150,
     "timer_running": False,
     "timer_started": False,
-    "status": "Initializing…",
+    "status": "Initializingâ€¦",
     "status_ok": False,
     "device": DEVICE,
     "infer_fps": 0.0,
@@ -568,7 +571,7 @@ _infer_running = True
 _timer_tick_time = 0.0
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _set_status(msg, ok=True):
     with state_lock:
         state["status"] = msg
@@ -580,7 +583,7 @@ def _audio_cmd(cmd):
         state["audio_seq"] += 1
 
 
-# ── IP / DroidCam camera helpers ──────────────────────────────────────────────
+# â”€â”€ IP / DroidCam camera helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _ip_cameras = []  # user-added IP cameras: [{"id": "ip:...", "name": "..."}]
 _ip_cameras_lock = threading.Lock()
 
@@ -594,7 +597,7 @@ def _check_droidcam(ip_port):
         try:
             req = urllib.request.Request(url, method='GET')
             resp = urllib.request.urlopen(req, timeout=3)
-            # DroidCam returns multipart MJPEG — any 2xx is good
+            # DroidCam returns multipart MJPEG â€” any 2xx is good
             if resp.status < 400:
                 return url
         except Exception:
@@ -632,14 +635,14 @@ def _resolve_camera_src(src):
         return src_str
 
 
-# ── Camera scanning ──────────────────────────────────────────────────────────
+# â”€â”€ Camera scanning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import glob as _glob
 
 def _linux_v4l2_cameras():
     """Enumerate V4L2 capture devices on Linux with real names.
     Uses v4l2-ctl --list-devices to get grouped output, falling back to sysfs.
     Only returns the primary capture node per camera (not metadata nodes).
-    Does NOT probe/open devices here — that would hold fds and block active
+    Does NOT probe/open devices here â€” that would hold fds and block active
     CameraThreads from reconnecting on refresh.
     """
     named_cams = []
@@ -666,7 +669,7 @@ def _linux_v4l2_cameras():
     except Exception:
         pass
 
-    # Method 2 fallback: sysfs — only keep primary nodes (lowest index per hw name)
+    # Method 2 fallback: sysfs â€” only keep primary nodes (lowest index per hw name)
     if not named_cams:
         devs = sorted(_glob.glob("/dev/video*"))
         seen_hw = set()
@@ -701,7 +704,7 @@ def _linux_v4l2_cameras():
     return result
 
 _cam_cache = {"ts": 0, "data": []}
-_CAM_CACHE_TTL = 300  # seconds – camera list changes rarely; re-probe is expensive
+_CAM_CACHE_TTL = 300  # seconds â€“ camera list changes rarely; re-probe is expensive
 
 def scan_cameras():
     now = time.monotonic()
@@ -749,7 +752,7 @@ def scan_cameras():
     return result
 
 
-# ── Placeholder frame ────────────────────────────────────────────────────────
+# â”€â”€ Placeholder frame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _placeholder_jpg(text):
     img = np.zeros((PROCESS_H, PROCESS_W, 3), dtype=np.uint8)
     cv2.putText(img, text, (30, PROCESS_H // 2),
@@ -761,9 +764,9 @@ _no_blue_jpg = _placeholder_jpg("No BLUE camera")
 _no_red_jpg  = _placeholder_jpg("No RED camera")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Background Threads
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 def inference_loop():
     """Continuously process frames from both cameras (runs on server)."""
     global latest_blue_jpg, latest_red_jpg
@@ -832,7 +835,7 @@ def inference_loop():
                 if blue_cam.is_open(): cams_active.append("Blue")
                 if red_cam.is_open(): cams_active.append("Red")
                 if cams_active:
-                    state["status"] = f"Running — {', '.join(cams_active)} cam{'s' if len(cams_active)>1 else ''} active"
+                    state["status"] = f"Running â€” {', '.join(cams_active)} cam{'s' if len(cams_active)>1 else ''} active"
                     state["status_ok"] = True
         else:
             time.sleep(0.02)
@@ -868,7 +871,7 @@ def _begin_countdown():
         if not state["timer_running"]:
             return  # user paused/reset during the 3 s lead-in
         state["timer_started"] = True
-        state["status"] = "Match started! LIVE counting…"
+        state["status"] = "Match started! LIVE countingâ€¦"
         state["status_ok"] = True
         # Reset trackers and scores for the new match
         blue_tracker.reset()
@@ -887,9 +890,9 @@ def load_yolo():
     detector.load(callback=cb)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Flask Routes
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -979,11 +982,11 @@ def api_timer_start():
         if state["timer_running"]:
             return jsonify({"ok": True, "msg": "already running"})
         if state["timer_seconds"] <= 0:
-            return jsonify({"ok": False, "msg": "timer ended — reset first"})
+            return jsonify({"ok": False, "msg": "timer ended â€” reset first"})
         fresh = not state["timer_started"]
         state["timer_running"] = True
         if fresh:
-            state["status"] = "Audio started — match in 3 s"
+            state["status"] = "Audio started â€” match in 3 s"
         else:
             state["timer_started"] = True
             state["status"] = "Match resumed"
@@ -1004,7 +1007,7 @@ def api_timer_pause():
     with state_lock:
         if state["timer_running"]:
             state["timer_running"] = False
-            state["status"] = "Paused — live counting continues"
+            state["status"] = "Paused â€” live counting continues"
             state["status_ok"] = True
     _audio_cmd("pause")
     return jsonify({"ok": True})
@@ -1089,11 +1092,11 @@ def api_status():
         return jsonify(dict(state))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  Entry Point
-# ══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 if __name__ == "__main__":
-    logging.info("Starting DECODE Goal Scorer server on :2016 …")
+    logging.info("Starting DECODE Goal Scorer server on :2016 â€¦")
 
     # Background threads
     threading.Thread(target=load_yolo, daemon=True).start()
@@ -1105,7 +1108,7 @@ if __name__ == "__main__":
         # Try DroidCam at 192.168.0.197:4747 for the red goal first
         droidcam_ip = "192.168.0.197:4747"
         droidcam_url = None
-        logging.info(f"Checking for DroidCam at {droidcam_ip}…")
+        logging.info(f"Checking for DroidCam at {droidcam_ip}â€¦")
         try:
             droidcam_url = _check_droidcam(droidcam_ip)
         except Exception:
