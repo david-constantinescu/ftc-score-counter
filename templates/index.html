@@ -148,12 +148,6 @@ button:hover { opacity: 0.9; }
 .team-pill.red { left: max(4vw, 24px); background: #e0002c; }
 .team-pill.blue { right: max(4vw, 24px); background: #1f77b7; }
 
-.team-numbers {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
 .preview-cam-controls {
   display: none;
   align-items: center;
@@ -361,23 +355,13 @@ select {
 
   <div class="main-area">
     <div class="upper-zone">
-      <div class="team-pill red">
-        <div class="team-numbers" id="redTeamsDisp">
-          <span id="red1">12560</span>
-          <span id="red2">12560</span>
-        </div>
-      </div>
+      <div class="team-pill red"></div>
 
       <div class="main-panel">
         <div class="main-timer" id="timer">2:30</div>
       </div>
 
-      <div class="team-pill blue">
-        <div class="team-numbers" id="blueTeamsDisp">
-          <span id="blue1">12560</span>
-          <span id="blue2">12560</span>
-        </div>
-      </div>
+      <div class="team-pill blue"></div>
     </div>
 
     <div class="preview-cam-controls">
@@ -427,6 +411,10 @@ select {
   </div>
 </div>
 
+<audio id="timerAudio" preload="auto">
+  <source src="/static/ftctimer.mp3" type="audio/mpeg">
+</audio>
+
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <h2>Settings</h2>
@@ -469,6 +457,36 @@ select {
 <script>
 let previewsVisible = false;
 let motifGreenIndex = 0;
+let lastAudioSeq = 0;
+let audioUnlocked = false;
+const timerAudio = document.getElementById('timerAudio');
+
+function handleAudio(cmd) {
+  if (!cmd) return;
+  if (cmd === 'play') {
+    timerAudio.currentTime = 0;
+    timerAudio.play().catch(() => {});
+  } else if (cmd === 'pause') {
+    timerAudio.pause();
+  } else if (cmd === 'resume') {
+    timerAudio.play().catch(() => {});
+  } else if (cmd === 'stop') {
+    timerAudio.pause();
+    timerAudio.currentTime = 0;
+  }
+}
+
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const p = timerAudio.play();
+  if (p) {
+    p.then(() => {
+      timerAudio.pause();
+      timerAudio.currentTime = 0;
+      audioUnlocked = true;
+    }).catch(() => {});
+  }
+}
 
 function setMotifGreen(index) {
   motifGreenIndex = index;
@@ -486,28 +504,37 @@ function closeSettingsModal() {
 }
 
 function applyTeamsVisibility(show) {
-  document.getElementById('redTeamsDisp').style.display = show ? 'flex' : 'none';
-  document.getElementById('blueTeamsDisp').style.display = show ? 'flex' : 'none';
-  document.getElementById('redTeamsBottom').style.display = show ? 'block' : 'none';
-  document.getElementById('blueTeamsBottom').style.display = show ? 'block' : 'none';
+  const r1 = document.getElementById('inputRed1').value.trim();
+  const r2 = document.getElementById('inputRed2').value.trim();
+  const b1 = document.getElementById('inputBlue1').value.trim();
+  const b2 = document.getElementById('inputBlue2').value.trim();
+
+  const redBottom = document.getElementById('redTeamsBottom');
+  const blueBottom = document.getElementById('blueTeamsBottom');
+
+  const redLines = [r1, r2].filter(Boolean);
+  const blueLines = [b1, b2].filter(Boolean);
+
+  if (show && redLines.length) {
+    redBottom.innerHTML = redLines.join('<br>');
+    redBottom.style.display = 'block';
+  } else {
+    redBottom.innerHTML = '';
+    redBottom.style.display = 'none';
+  }
+
+  if (show && blueLines.length) {
+    blueBottom.innerHTML = blueLines.join('<br>');
+    blueBottom.style.display = 'block';
+  } else {
+    blueBottom.innerHTML = '';
+    blueBottom.style.display = 'none';
+  }
 }
 
 function saveSettings() {
   const show = document.getElementById('showTeamsCheck').checked;
   const flip = document.getElementById('flipLayoutCheck').checked;
-
-  const r1 = document.getElementById('inputRed1').value.trim() || '12560';
-  const r2 = document.getElementById('inputRed2').value.trim() || '12560';
-  const b1 = document.getElementById('inputBlue1').value.trim() || '12560';
-  const b2 = document.getElementById('inputBlue2').value.trim() || '12560';
-
-  document.getElementById('red1').textContent = r1;
-  document.getElementById('red2').textContent = r2;
-  document.getElementById('blue1').textContent = b1;
-  document.getElementById('blue2').textContent = b2;
-
-  document.getElementById('redTeamsBottom').innerHTML = r1 + '<br>' + r2;
-  document.getElementById('blueTeamsBottom').innerHTML = b1 + '<br>' + b2;
 
   document.getElementById('scoreboard').classList.toggle('blue-left', flip);
   applyTeamsVisibility(show);
@@ -534,7 +561,10 @@ function post(url, body) {
   });
 }
 
-function timerStart() { post('/api/timer/start'); }
+function timerStart() {
+  unlockAudio();
+  post('/api/timer/start');
+}
 function timerPause() { post('/api/timer/pause'); }
 function timerReset() { post('/api/timer/reset'); }
 
@@ -599,6 +629,11 @@ es.onmessage = function (e) {
   const timer = document.getElementById('timer');
   timer.textContent = t;
   timer.classList.toggle('danger', d.timer_seconds <= 30 && d.timer_started);
+
+  if (typeof d.audio_seq === 'number' && d.audio_seq > lastAudioSeq) {
+    lastAudioSeq = d.audio_seq;
+    handleAudio(d.audio_cmd);
+  }
 };
 
 monitorStream('redStream', '/stream/red');
